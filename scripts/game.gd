@@ -27,6 +27,9 @@ var result_timer := 0.0
 var enemies: Array = []
 
 var arena_root: Node2D
+## Holds the arena, hero and enemies. Its transform is the isometric projection; children
+## keep plain ground coordinates.
+var iso_layer: Node2D
 var arena_view: ArenaView
 var hero: Hero
 var controls: TouchControls
@@ -47,13 +50,18 @@ func _ready() -> void:
 	arena_root = Node2D.new()
 	arena_root.name = "ArenaRoot"
 	add_child(arena_root)
+	iso_layer = Node2D.new()
+	iso_layer.name = "IsoLayer"
+	iso_layer.transform = Iso.basis()
+	arena_root.add_child(iso_layer)
+	input.iso_view = true
 	arena_view = ArenaView.new()
 	arena_view.arena_size = tuning.arena_size
-	arena_root.add_child(arena_view)
+	iso_layer.add_child(arena_view)
 
 	hero = HERO_SCENE.instantiate() as Hero
 	hero.setup(tuning, input, tuning.arena_size)
-	arena_root.add_child(hero)
+	iso_layer.add_child(hero)
 	hero.swung.connect(func(heavy: bool): sfx.play("swing_heavy" if heavy else "swing_light"))
 	hero.hit_landed.connect(func(_e: Enemy, _h: bool): sfx.play("hit"))
 	hero.dodged.connect(func(): sfx.play("dodge"))
@@ -95,27 +103,21 @@ func enemies_alive() -> int:
 func start_fight(count: int) -> void:
 	enemy_count = clampi(count, 1, 3)
 	for e in enemies:
-		arena_root.remove_child(e)
+		iso_layer.remove_child(e)
 		e.queue_free()
 	enemies.clear()
 	controller.reset()
 	controls.reset()
 	input.clear()
 	var a := tuning.arena_size
-	hero.reset(Vector2(a.x * 0.5, a.y - tuning.hero_spawn_from_bottom))
-	var top := tuning.enemy_spawn_from_top
-	var spread := tuning.enemy_spawn_spread
-	var spots: Array[Vector2] = [
-		Vector2(a.x * 0.5, top),
-		Vector2(a.x * 0.5 - spread, top + 20.0),
-		Vector2(a.x * 0.5 + spread, top + 20.0),
-	]
+	hero.reset(tuning.hero_spawn())
+	var spots := tuning.enemy_spawns()
 	for i in enemy_count:
 		var e := ENEMY_SCENE.instantiate() as Enemy
 		e.setup(tuning, controller, hero, a, i)
 		e.position = spots[i]
 		e.struck.connect(func(): sfx.play("enemy_strike"))
-		arena_root.add_child(e)
+		iso_layer.add_child(e)
 		enemies.append(e)
 	outcome = Outcome.NONE
 	fight_time = 0.0
@@ -277,10 +279,13 @@ func _apply_layout() -> void:
 		insets.y + HUD_HEIGHT,
 		vp.x - insets.x - insets.z - 20.0,
 		vp.y - band_h - insets.y - HUD_HEIGHT - 10.0)
+	# The isometric diamond spans x in [-H, W] and y in [0, (W + H) / 2] around the ground origin.
 	var a := tuning.arena_size
-	var s := minf(free.size.x / a.x, free.size.y / a.y)
+	var extent := Vector2(a.x + a.y, (a.x + a.y) * 0.5)
+	var s := minf(free.size.x / extent.x, free.size.y / extent.y)
 	arena_root.scale = Vector2(s, s)
-	arena_root.position = free.position + (free.size - a * s) * 0.5
+	var local_center := Vector2((a.x - a.y) * 0.5, (a.x + a.y) * 0.25)
+	arena_root.position = free.get_center() - local_center * s
 	hud.layout(vp, insets)
 	controls.layout(vp, band_h, insets)
 	menu.layout(vp)

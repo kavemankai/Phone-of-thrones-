@@ -17,7 +17,7 @@ const FLASH_COLOR := Color(1, 1, 1)
 
 var tuning: Tuning
 var input: CombatInput
-var arena_size := Vector2(420, 480)
+var arena_size := Vector2(340, 380)
 
 var state: State = State.IDLE
 var state_time := 0.0
@@ -41,7 +41,7 @@ func setup(t: Tuning, inp: CombatInput, arena: Vector2) -> void:
 	input = inp
 	arena_size = arena
 	radius = t.hero_radius
-	reset(Vector2(arena.x * 0.5, arena.y - t.hero_spawn_from_bottom))
+	reset(t.hero_spawn())
 
 
 func reset(pos: Vector2) -> void:
@@ -97,9 +97,9 @@ func step(dt: float, enemies: Array) -> void:
 	state_time += dt
 	match state:
 		State.IDLE:
-			_move(dt, 1.0)
 			if input.dodge_pressed and _try_dodge():
 				return
+			_move(dt, 1.0)
 			if input.attack_pressed:
 				_enter(State.CHARGING)
 				charge_time = 0.0
@@ -254,6 +254,7 @@ func _clamp_to_arena(p: Vector2) -> Vector2:
 
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta)
+	z_index = int(position.x + position.y)  # isometric depth order: nearer is lower on screen
 	if state == State.DODGE and state_time < (tuning.dodge_iframes if tuning else 0.0):
 		modulate.a = 0.4
 	elif immune_time > 0.0 and state != State.DEAD:
@@ -267,7 +268,11 @@ func _draw() -> void:
 	if tuning == null:
 		return
 	var r := radius
-	if not cur_attack.is_empty() and state in [State.WINDUP, State.ACTIVE, State.RECOVER]:
+	# Ground pass: drawn in ground space, so the iso layer projects it. Wedges here are the
+	# same sector the damage test uses.
+	draw_circle(Vector2.ZERO, r + 3.0, Color(0, 0, 0, 0.3))
+	var attacking := not cur_attack.is_empty() and state in [State.WINDUP, State.ACTIVE, State.RECOVER]
+	if attacking:
 		var poly := HitShapes.sector_polygon(facing, cur_attack.reach, cur_attack.arc)
 		var a := 0.0
 		match state:
@@ -282,40 +287,48 @@ func _draw() -> void:
 			var outline := poly.duplicate()
 			outline.append(poly[0])
 			draw_polyline(outline, Color(1, 1, 1, 0.9), 2.0)
-		_draw_weapon()
-	else:
-		draw_line(facing * r * 0.5, facing * (r + 16.0), Color(0.85, 0.88, 0.95), 4.0)
-
-	var body := FLASH_COLOR if flash > 0.0 else BODY_COLOR
-	if state == State.DEAD:
-		body = Color(0.3, 0.35, 0.45)
-	draw_circle(Vector2.ZERO, r, body)
-	draw_arc(Vector2.ZERO, r, 0.0, TAU, 32, Color(0.05, 0.1, 0.25), 2.0)
-	# Facing marker.
-	draw_line(facing * r * 0.2, facing * (r + 5.0), Color(1, 1, 1), 3.0)
-
 	if state == State.CHARGING:
-		var p := charge_progress()
 		if is_heavy_ready():
 			var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.02)
 			draw_arc(Vector2.ZERO, r + 10.0, 0.0, TAU, 32, Color(1.0, 0.85, 0.2, pulse), 4.0)
 		else:
-			draw_arc(Vector2.ZERO, r + 8.0, -PI * 0.5, -PI * 0.5 + TAU * p, 32,
+			draw_arc(Vector2.ZERO, r + 8.0, -PI * 0.5, -PI * 0.5 + TAU * charge_progress(), 32,
 					Color(1, 1, 1, 0.8), 3.0)
 
+	# Upright pass: the body stands on the ground point.
+	draw_set_transform_matrix(Iso.upright())
+	var height := r * 2.0
+	var side := FLASH_COLOR if flash > 0.0 else BODY_COLOR
+	if state == State.DEAD:
+		side = Color(0.3, 0.35, 0.45)
+	Iso.draw_cylinder(self, r, height, side, Color(0.05, 0.1, 0.25))
+	# Facing marker on top of the body.
+	var top := Vector2(0.0, -height)
+	var tip := top + Iso.to_screen(facing) * r * 0.8
+	draw_line(top, tip, Color(1, 1, 1), 3.0)
+	draw_circle(tip, 3.0, Color(1, 1, 1))
+	_draw_weapon(height * 0.55, attacking)
 
-func _draw_weapon() -> void:
-	var half := deg_to_rad(cur_attack.arc) * 0.5
+
+func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 	var base := facing.angle()
-	var ang := base
-	match state:
-		State.WINDUP:
-			ang = base - half
-		State.ACTIVE:
-			ang = base + lerpf(-half, half, clampf(state_time / cur_attack.active, 0.0, 1.0))
-		State.RECOVER:
-			ang = base + half
-	var len := radius + (30.0 if cur_attack.heavy else 22.0)
-	var width := 6.0 if cur_attack.heavy else 4.0
-	draw_line(Vector2.from_angle(ang) * radius * 0.6, Vector2.from_angle(ang) * len,
+	var ang := base + 0.6
+	var length := radius + 22.0
+	var width := 4.0
+	if attacking:
+		var half := deg_to_rad(cur_attack.arc) * 0.5
+		ang = base
+		match state:
+			State.WINDUP:
+				ang = base - half
+			State.ACTIVE:
+				ang = base + lerpf(-half, half, clampf(state_time / cur_attack.active, 0.0, 1.0))
+			State.RECOVER:
+				ang = base + half
+		if cur_attack.heavy:
+			length = radius + 30.0
+			width = 6.0
+	var dir := Vector2.from_angle(ang)
+	var anchor := Vector2(0.0, -anchor_height)
+	draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * length,
 			Color(0.9, 0.93, 1.0), width)

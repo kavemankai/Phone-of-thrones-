@@ -3,6 +3,9 @@ extends RefCounted
 ## The only thing the hero reads. Touch controls and the keyboard both write here,
 ## so gameplay code never knows which device produced an action.
 
+## When true, stick and key vectors are screen-space and are mapped to ground space
+## (see Iso), so "up" on the stick is "up" on an isometric screen.
+var iso_view := false
 var touch_move := Vector2.ZERO
 var key_move := Vector2.ZERO
 var attack_touch := false
@@ -21,6 +24,8 @@ func attack_down() -> bool:
 
 func move_vector() -> Vector2:
 	var v := touch_move if touch_move.length_squared() > 0.0 else key_move
+	if iso_view:
+		v = Iso.stick_to_ground(v)
 	return v.limit_length(1.0)
 
 

@@ -70,14 +70,13 @@ extends Resource
 @export var separation_speed: float = 300.0
 
 @export_group("Arena and layout")
-## Logical size. The layout scales the arena up to fill the screen above the control band
-## (about 1.65x on a 720 x 1280 screen), so a 16 px body reads at roughly 26 screen px.
-## Every distance in this file is in these logical units. Set this to 640 x 720 for a literal
-## 1:1 design-pixel arena (bodies then look about 40% smaller).
-@export var arena_size: Vector2 = Vector2(420.0, 480.0)
-@export var hero_spawn_from_bottom: float = 100.0
-@export var enemy_spawn_from_top: float = 100.0
-@export var enemy_spawn_spread: float = 110.0
+## Logical ground size. The view is isometric (2:1), so the arena appears as a diamond about
+## (width + height) wide and half that tall; the layout scales it to fit above the control band.
+## Every distance in this file is in these ground units. Larger arenas look smaller on screen.
+@export var arena_size: Vector2 = Vector2(340.0, 380.0)
+## Spawn distance from the arena centre along the screen-vertical axis (hero below, enemies above).
+@export var spawn_axis_dist: float = 110.0
+@export var enemy_spawn_spread: float = 80.0
 ## Share of the screen height reserved for the control band.
 @export var control_band_fraction: float = 0.28
 @export var joystick_radius: float = 90.0
@@ -108,3 +107,22 @@ func attack_data(heavy: bool) -> Dictionary:
 		"recover": light_recover,
 		"knockback": 0.0,
 	}
+
+
+## Screen-down in ground coordinates, and screen-right.
+const DOWN := Vector2(0.70710678, 0.70710678)
+const RIGHT := Vector2(0.70710678, -0.70710678)
+
+
+func hero_spawn() -> Vector2:
+	return arena_size * 0.5 + DOWN * spawn_axis_dist
+
+
+## Positions for up to three enemies: one ahead, two flanking slightly nearer.
+func enemy_spawns() -> Array[Vector2]:
+	var c := arena_size * 0.5
+	return [
+		c - DOWN * spawn_axis_dist,
+		c - DOWN * (spawn_axis_dist - 15.0) - RIGHT * enemy_spawn_spread,
+		c - DOWN * (spawn_axis_dist - 15.0) + RIGHT * enemy_spawn_spread,
+	]

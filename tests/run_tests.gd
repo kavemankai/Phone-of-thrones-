@@ -115,6 +115,7 @@ func _initialize() -> void:
 	test_dodge_avoids_strike()
 	test_multitouch_and_focus()
 	test_touch_drives_hero()
+	test_isometric_view()
 	test_commitment_limit()
 	test_full_fights()
 	test_retry_resets_everything()
@@ -649,6 +650,97 @@ func test_touch_drives_hero() -> void:
 	r.free_all()
 
 
+func test_isometric_view() -> void:
+	section("Isometric view: projection, stick mapping, spawns, layout")
+	var ok := true
+	for v in [Vector2(10, 0), Vector2(0, 10), Vector2(3, -7), Vector2(-120, 45.5)]:
+		if Iso.to_ground(Iso.to_screen(v)).distance_to(v) > 0.0001 or Iso.to_screen(Iso.to_ground(v)).distance_to(v) > 0.0001:
+			ok = false
+	check("Iso.to_screen and to_ground are inverses", ok)
+	check("ground (1,1) is screen-down, ground (1,-1) is screen-right",
+			Iso.to_screen(Vector2(1, 1)).is_equal_approx(Vector2(0, 1)) and Iso.to_screen(Vector2(1, -1)).is_equal_approx(Vector2(2, 0)))
+
+	# Affine maps keep containment, so a wedge drawn through the projection covers exactly
+	# the projected hit area.
+	var poly := HitShapes.sector_polygon(Vector2.UP, T.heavy_reach, T.heavy_arc_deg)
+	var screen_poly := PackedVector2Array()
+	for p in poly:
+		screen_poly.append(Iso.to_screen(p))
+	var mismatches := 0
+	var x := -100.0
+	while x <= 100.0:
+		var y := -100.0
+		while y <= 100.0:
+			var g := Vector2(x, y)
+			if Geometry2D.is_point_in_polygon(g, poly) != Geometry2D.is_point_in_polygon(Iso.to_screen(g), screen_poly):
+				if polygon_edge_distance(poly, g) > 0.6:
+					mismatches += 1
+			y += 3.0
+		x += 3.0
+	check("a projected wedge contains exactly the projected hit area", mismatches == 0, "bad=%d" % mismatches)
+
+	# Stick up means up on the screen, at full ground speed.
+	var r := Rig.new(root, T, Vector2(320, 360))
+	r.input.iso_view = true
+	r.input.key_move = Vector2(0, -1)
+	var start := r.hero.position
+	r.run(0.5, 0.01)
+	var delta := r.hero.position - start
+	var on_screen := Iso.to_screen(delta)
+	check("stick up moves the hero straight up the screen", on_screen.y < -10.0 and absf(on_screen.x) < 0.01, str(on_screen))
+	check("ground speed is still 180 px/s", absf(delta.length() - 90.0) < 0.5, "d=%s" % delta.length())
+	r.input.key_move = Vector2(1, 0)
+	var before := r.hero.position
+	r.run(0.3, 0.01)
+	var right_move := Iso.to_screen(r.hero.position - before)
+	check("stick right moves the hero straight right on the screen", right_move.x > 5.0 and absf(right_move.y) < 0.01, str(right_move))
+	r.free_all()
+
+	var d := Rig.new(root, T, Vector2(320, 360))
+	d.input.iso_view = true
+	d.input.key_move = Vector2(0, -1)
+	d.input.press_dodge()
+	var s0 := d.hero.position
+	d.tick(0.01)
+	d.input.key_move = Vector2.ZERO  # let go once the dodge has started
+	d.run(0.5, 0.01)
+	var dodge_screen := Iso.to_screen(d.hero.position - s0)
+	check("dodge with stick up goes up the screen, 90 ground px", dodge_screen.y < 0.0 and absf(dodge_screen.x) < 0.01 and absf((d.hero.position - s0).length() - 90.0) < 0.5)
+	d.free_all()
+
+	var g := make_game()
+	check("the game turns the isometric stick mapping on", g.input.iso_view)
+	g.start_fight(3)
+	var a := g.tuning.arena_size
+	var spawns_ok := true
+	var min_gap := INF
+	for e in g.enemies:
+		if e.position.x < 20 or e.position.y < 20 or e.position.x > a.x - 20 or e.position.y > a.y - 20:
+			spawns_ok = false
+		min_gap = minf(min_gap, e.position.distance_to(g.hero.position))
+	check("hero and all enemies spawn inside the arena", spawns_ok and g.hero.position.x < a.x - 16 and g.hero.position.y < a.y - 16)
+	check("enemies spawn outside melee range (> %d)" % int(g.tuning.enemy_reach + 32.0), min_gap > g.tuning.enemy_reach + 32.0 + 40.0, "gap=%.1f" % min_gap)
+	var hero_screen := Iso.to_screen(g.hero.position)
+	var above := true
+	for e in g.enemies:
+		if Iso.to_screen(e.position).y >= hero_screen.y:
+			above = false
+	check("enemies start above the hero on the screen", above)
+
+	# Whole diamond sits inside the area above the control band.
+	var vp := g.get_viewport().get_visible_rect().size
+	var band_top := vp.y * (1.0 - g.tuning.control_band_fraction)
+	var fits := true
+	for corner in [Vector2.ZERO, Vector2(a.x, 0), Vector2(0, a.y), a]:
+		var sp := g.arena_root.transform * Iso.to_screen(corner)
+		if sp.x < 0.0 or sp.x > vp.x or sp.y < 0.0 or sp.y > band_top:
+			fits = false
+			print("      corner off screen: ", corner, " -> ", sp)
+	check("all four arena corners are on screen, above the control band", fits)
+	check("scene tree is ArenaRoot > IsoLayer > hero and enemies", g.hero.get_parent() == g.iso_layer and g.enemies[0].get_parent() == g.iso_layer and g.iso_layer.get_parent() == g.arena_root)
+	g.queue_free()
+
+
 func make_game() -> Game:
 	var g := (load("res://scenes/main.tscn") as PackedScene).instantiate() as Game
 	root.add_child(g)
@@ -813,7 +905,7 @@ func snapshot(g: Game) -> Dictionary:
 	for e in g.enemies:
 		es.append([e.position, e.hp, e.state, e.cooldown, e.state_time])
 	var enemy_nodes := 0
-	for c in g.arena_root.get_children():
+	for c in g.iso_layer.get_children():
 		if c is Enemy:
 			enemy_nodes += 1
 	return {

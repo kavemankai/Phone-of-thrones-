@@ -6,6 +6,7 @@ The full brief is in [docs/shieldwall_design.md](docs/shieldwall_design.md). Tes
 
 - Engine: Godot **4.6.2-stable** (official build `71f334935`), GDScript, Compatibility renderer.
 - Target: Android, portrait, design canvas 720 x 1280, arm64 only.
+- View: fixed 2:1 isometric camera with plain shapes (a diamond arena, cylinder characters). The simulation is flat; only drawing and the stick mapping are isometric.
 - No plugins, no paid services, no asset files. All art and sound is generated in code.
 
 ## Run it on a desktop
@@ -47,11 +48,15 @@ Values you are most likely to touch:
 | Enemies too fast or too slow to read | `enemy_speed`, `enemy_windup` |
 | Three enemies feel chaotic | `max_commits`, `enemy_stagger`, `enemy_attack_gap`, `enemy_hover_range` |
 | Hits feel unfair or dodge too strict | `dodge_iframes`, `dodge_duration`, `enemy_lock_time` |
-| Arena feels cramped or empty | `arena_size` (see below) |
+| Arena feels cramped or empty | `arena_size`, `spawn_axis_dist` (see above) |
 
-### Arena size and zoom
+### Isometric view and arena size
 
-The brief gives the combat numbers but not an arena size. With the literal values (16 px body radius) on a 720-wide canvas, a body is about 2.9 mm wide on a typical phone, so I did not use a 640 x 720 arena. The default is `arena_size = 420 x 480` arena units, and the layout scales it to fill the space above the control band (about 1.65x on a 720 x 1280 screen). Speeds, reaches and radii keep their briefed values in arena units; on screen they look 1.65x larger. Set `arena_size` to `640 x 720` for a literal 1:1 arena.
+The game simulates on a flat ground plane and draws it through a fixed 2:1 isometric projection (`scripts/iso.gd`). Attack wedges are the same sectors the damage test uses, projected, so a wedge still shows exactly what hurts. Each character is a cylinder standing on a ground circle; the cylinder's base ellipse is the real body position and size.
+
+Controls follow the screen: stick up moves the hero up the screen (diagonally on the ground), and dodge uses the same mapping. Ground speed stays 180 per second in every direction, so movement along the screen's vertical looks slower than sideways, as in any isometric game.
+
+An isometric arena is a 2:1 diamond, so in portrait it fills the screen width but only about half the height above the controls. To keep characters readable the default `arena_size` is 340 x 380 ground units (about 1x on screen). A larger arena gives more room to circle but makes everything smaller. Distances, speeds and radii in `tuning.tres` are ground units.
 
 ## Project layout
 
@@ -64,6 +69,7 @@ scripts/
   game.gd                encounter flow, fixed-step simulation, win/lose, retry, layout
   combat_input.gd        the only thing the hero reads; touch and keyboard both write here
   touch_controls.gd      joystick, Attack, Dodge; one finger index per role
+  iso.gd                 isometric projection and shared cylinder drawing
   hero.gd                hero state machine (idle, charging, wind-up, active, recover, dodge, hurt, dead)
   enemy.gd               enemy state machine (approach, position, wind-up, active, recover, dead)
   encounter_controller.gd  at most 2 enemies committed to an attack at once
@@ -120,7 +126,8 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 
 ## Decisions I made where the brief was silent
 
-- **Arena size 420 x 480 units, scaled to fit.** Reason above.
+- **Isometric view is render-only.** Simulation, hit tests and tuning stay in flat ground units. Arena is 340 x 380 units, scaled to fit.
+- **2:1 projection fixed.** A steeper camera would use more of the screen height, but is not isometric. Not built.
 - **Enemy wedge arc is 100 degrees** (`enemy_arc_deg`). The brief gives enemy reach (48) but no arc.
 - **Hit area is the body circle touching the wedge.** If any part of a body overlaps the drawn wedge, it is hit. This is exact, and the telegraph is drawn from the same function.
 - **Enemies resolve before the hero in each step.** If a strike on the hero and the hero's killing blow land in the same step, the hero is already down, so defeat wins. This is the brief's tie rule.

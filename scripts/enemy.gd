@@ -15,7 +15,7 @@ const BODY_COLOR := Color(0.88, 0.2, 0.2)
 var tuning: Tuning
 var controller: EncounterController
 var hero: Hero
-var arena_size := Vector2(420, 480)
+var arena_size := Vector2(340, 380)
 var index := 0
 var radius := 16.0
 
@@ -167,6 +167,7 @@ func _try_hit() -> void:
 
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta)
+	z_index = int(position.x + position.y)  # isometric depth order
 	if state == State.DEAD:
 		fade = maxf(0.0, fade - delta)
 		modulate.a = fade / 0.6
@@ -181,20 +182,28 @@ func _draw() -> void:
 	if state == State.DEAD:
 		draw_circle(Vector2.ZERO, radius, Color(0.35, 0.35, 0.38))
 		return
+	# Ground pass (projected by the iso layer): shadow and the attack wedge, which is the
+	# exact sector the damage test uses.
+	draw_circle(Vector2.ZERO, radius + 3.0, Color(0, 0, 0, 0.3))
 	if state == State.WINDUP or state == State.ACTIVE:
 		_draw_telegraph()
-	var body := Color(1, 1, 1) if flash > 0.0 else BODY_COLOR
-	draw_circle(Vector2.ZERO, radius, body)
-	draw_arc(Vector2.ZERO, radius, 0.0, TAU, 32, Color(0.3, 0.02, 0.02), 2.0)
-	# Facing marker and weapon.
+
+	# Upright pass.
+	draw_set_transform_matrix(Iso.upright())
+	var height := radius * 2.0
+	var side := Color(1, 1, 1) if flash > 0.0 else BODY_COLOR
+	Iso.draw_cylinder(self, radius, height, side, Color(0.3, 0.02, 0.02))
 	var f := attack_dir if (state == State.WINDUP or state == State.ACTIVE) else facing
-	draw_line(f * radius * 0.2, f * (radius + 5.0), Color(1, 1, 1), 3.0)
-	_draw_weapon(f)
-	# Health bar.
+	var top := Vector2(0.0, -height)
+	var tip := top + Iso.to_screen(f) * radius * 0.8
+	draw_line(top, tip, Color(1, 1, 1), 3.0)
+	draw_circle(tip, 3.0, Color(1, 1, 1))
+	_draw_weapon(f, height * 0.55)
+	# Health bar above the head.
 	var w := 36.0
-	var top := Vector2(-w * 0.5, -radius - 14.0)
-	draw_rect(Rect2(top, Vector2(w, 5.0)), Color(0, 0, 0, 0.6))
-	draw_rect(Rect2(top, Vector2(w * hp / tuning.enemy_max_hp, 5.0)), Color(0.9, 0.25, 0.25))
+	var bar := Vector2(-w * 0.5, -height - 16.0)
+	draw_rect(Rect2(bar, Vector2(w, 5.0)), Color(0, 0, 0, 0.6))
+	draw_rect(Rect2(bar, Vector2(w * hp / tuning.enemy_max_hp, 5.0)), Color(0.9, 0.25, 0.25))
 
 
 func _draw_telegraph() -> void:
@@ -215,7 +224,7 @@ func _draw_telegraph() -> void:
 		draw_polyline(outline, Color(1.0, 0.7, 0.3, 0.6), 2.0)
 
 
-func _draw_weapon(f: Vector2) -> void:
+func _draw_weapon(f: Vector2, anchor_height: float) -> void:
 	var half := deg_to_rad(tuning.enemy_arc_deg) * 0.5
 	var base := f.angle()
 	var ang := base + 0.8
@@ -226,5 +235,7 @@ func _draw_weapon(f: Vector2) -> void:
 			ang = base + lerpf(-half, half, clampf(state_time / tuning.enemy_active, 0.0, 1.0))
 		State.RECOVER:
 			ang = base + half
-	draw_line(Vector2.from_angle(ang) * radius * 0.6, Vector2.from_angle(ang) * (radius + 20.0),
+	var dir := Vector2.from_angle(ang)
+	var anchor := Vector2(0.0, -anchor_height)
+	draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * (radius + 20.0),
 			Color(0.95, 0.85, 0.85), 4.0)

@@ -7,7 +7,11 @@ const GRID := Color(1, 1, 1, 0.05)
 const BORDER := Color(0.62, 0.55, 0.42)
 const GRID_STEP := 60.0
 
-var arena_size := Vector2(420, 480)
+var arena_size := Vector2(340, 380)
+
+
+func _ready() -> void:
+	z_index = -1
 
 
 func _draw() -> void:
