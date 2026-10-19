@@ -41,6 +41,10 @@ var fade := 0.0
 ## window after one ends in which a heavy hit cannot stagger it again.
 var stagger_left := 0.0
 var stagger_total := 0.0
+## Whether a hit ends the current stagger early (parry and heavy freezes) or not (a block
+## recoil), and the damage multiplier for the hit that ends it.
+var stagger_wakes := true
+var stagger_bonus := 2.0
 var stagger_immune := 0.0
 
 
@@ -73,9 +77,11 @@ func is_captain() -> bool:
 
 ## Cancels whatever the enemy was doing and freezes it for `duration` seconds. A hit on it
 ## ends the stagger early. Every cause goes through here, so every stagger gets the timer.
-func stagger(duration := 3.0) -> void:
+func stagger(duration := 3.0, wake_on_hit := true, damage_mult := -1.0) -> void:
 	if state == State.DEAD:
 		return
+	stagger_wakes = wake_on_hit
+	stagger_bonus = damage_mult if damage_mult >= 0.0 else tuning.stagger_damage_mult
 	stagger_total = duration
 	stagger_left = stagger_total
 	controller.release(self)
@@ -112,7 +118,7 @@ func take_hit(damage: float, from: Vector2, knockback: float, stagger_time := 0.
 		return
 	var was_staggered := state == State.STAGGER
 	if was_staggered:
-		damage *= tuning.stagger_damage_mult
+		damage *= stagger_bonus
 	hp -= damage
 	flash = 0.12
 	if knockback > 0.0:
@@ -120,18 +126,31 @@ func take_hit(damage: float, from: Vector2, knockback: float, stagger_time := 0.
 		var dir := away.normalized() if away.length() > 0.001 else Vector2.DOWN
 		position = clamp_to_arena(position + dir * knockback)
 	if hp <= 0.0:
-		hp = 0.0
-		state = State.DEAD
-		state_time = 0.0
-		fade = 0.6
-		controller.release(self)
-		died.emit()
+		_die()
 	else:
 		if was_staggered:
-			_wake()
+			if stagger_wakes:
+				_wake()
 		elif stagger_time > 0.0 and stagger_immune <= 0.0 and profile.heavy_stagger_mult > 0.0:
 			stagger(stagger_time * profile.heavy_stagger_mult)
 		damaged.emit(knockback > 0.0)
+
+
+func _die() -> void:
+	hp = 0.0
+	state = State.DEAD
+	state_time = 0.0
+	fade = 0.6
+	controller.release(self)
+	died.emit()
+
+
+## A parry with an executing weapon: takes a share of max HP (all of it for a grunt).
+func _execute() -> void:
+	hp -= profile.max_hp * profile.execute_fraction
+	flash = 0.12
+	if hp <= 0.0:
+		_die()
 
 
 func clamp_to_arena(p: Vector2) -> Vector2:
@@ -253,6 +272,11 @@ func _try_hit() -> void:
 		hit_done = true
 		if result == Hero.HitResult.PARRIED:
 			stagger(hero.parry_stagger_time() * profile.stagger_mult)
+			if hero.weapon.parry_kill:
+				_execute()
+		elif result == Hero.HitResult.BLOCKED and cur.block_stun and hero.state == Hero.State.BLOCK:
+			# A block recoils the attacker for a fixed time; hits do not end it and get no bonus.
+			stagger(hero.block_stun_time() * profile.stagger_mult, false, 1.0)
 
 
 func _process(delta: float) -> void:

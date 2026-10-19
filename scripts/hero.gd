@@ -45,6 +45,9 @@ var guard_wait := 0.0
 var block_cd := 0.0
 var parry_flash := 0.0
 var block_flash := 0.0
+## Ground-space walking velocity. It ramps toward the stick and is zeroed whenever an action
+## takes over movement (wind-up, strike, dodge, hurt, guard break, death).
+var velocity := Vector2.ZERO
 
 var _enemies: Array = []
 
@@ -99,9 +102,13 @@ func guard_reduction() -> float:
 	return tuning.block_reduction_shield if has_shield else tuning.block_reduction_bare
 
 
-## How long this weapon's parry freezes an attacker.
+## How long this weapon's parry freezes an attacker, and how long its block recoils one.
 func parry_stagger_time() -> float:
 	return weapon.parry_stagger_time
+
+
+func block_stun_time() -> float:
+	return weapon.block_stun_time
 
 
 func parry_window() -> float:
@@ -136,6 +143,7 @@ func reset(pos: Vector2) -> void:
 	block_cd = 0.0
 	parry_flash = 0.0
 	block_flash = 0.0
+	velocity = Vector2.ZERO
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
@@ -190,12 +198,14 @@ func step(dt: float, enemies: Array) -> void:
 		State.CHARGING:
 			_step_charging(dt)
 		State.WINDUP:
+			_move(dt, _attack_move(), false)
 			if state_time >= cur_attack.windup:
 				_enter(State.ACTIVE)
 				hit_ids = {}
 				swung.emit(cur_attack.heavy)
 				_apply_hits()
 		State.ACTIVE:
+			_move(dt, _attack_move(), false)
 			var lunge: float = cur_attack.get("lunge", 0.0)
 			if lunge > 0.0:
 				position = _clamp_to_arena(position + facing * (lunge / cur_attack.active) * dt)
@@ -203,7 +213,7 @@ func step(dt: float, enemies: Array) -> void:
 			if state_time >= cur_attack.active:
 				_enter(State.RECOVER)
 		State.RECOVER:
-			_move(dt, tuning.half_speed_mult)
+			_move(dt, _slow_move())
 			if input.dodge_pressed and _try_dodge():
 				return
 			if state_time >= cur_attack.recover:
@@ -312,11 +322,16 @@ func take_hit(damage: float) -> bool:
 func _enter(s: State) -> void:
 	state = s
 	state_time = 0.0
+	var rooted := s == State.DODGE or s == State.HURT or s == State.GUARD_BREAK or s == State.DEAD
+	if (s == State.WINDUP or s == State.ACTIVE) and weapon.attack_move_mult <= 0.0:
+		rooted = true
+	if rooted:
+		velocity = Vector2.ZERO
 
 
 func _step_charging(dt: float) -> void:
 	charge_time += dt
-	_move(dt, tuning.half_speed_mult)
+	_move(dt, _slow_move())
 	if input.dodge_pressed and _try_dodge():
 		return
 	if input.block_down() and block_cd <= 0.0:
@@ -407,12 +422,25 @@ func _recharge_dodge(dt: float) -> void:
 		dodge_recharge_t = maxf(0.0, dodge_recharge_t - recharge_time())
 
 
-func _move(dt: float, mult: float) -> void:
+## Speed fraction while winding up or striking: 0 (rooted) unless the weapon moves while attacking.
+func _attack_move() -> float:
+	return weapon.attack_move_mult
+
+
+## Speed fraction while charging and recovering.
+func _slow_move() -> float:
+	return weapon.attack_move_mult if weapon.attack_move_mult > 0.0 else tuning.half_speed_mult
+
+
+func _move(dt: float, mult: float, turn := true) -> void:
 	var v := input.move_vector()
-	if v.length() > 0.001:
-		position += v * move_speed() * mult * dt
+	var target := v * move_speed() * mult
+	var ramp := tuning.move_ramp_up if target.length_squared() >= velocity.length_squared() else tuning.move_ramp_down
+	velocity = velocity.move_toward(target, move_speed() / maxf(ramp, 0.001) * dt)
+	if turn and v.length() > 0.001:
 		facing = v.normalized()
-		position = _clamp_to_arena(position)
+	if velocity.length_squared() > 0.000001:
+		position = _clamp_to_arena(position + velocity * dt)
 
 
 func _clamp_to_arena(p: Vector2) -> Vector2:

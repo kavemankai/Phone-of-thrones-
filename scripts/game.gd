@@ -19,6 +19,7 @@ const WEAPON_PATHS := [
 	"res://resources/weapons/spear.tres",
 	"res://resources/weapons/axe.tres",
 	"res://resources/weapons/daggers.tres",
+	"res://resources/weapons/zweihander.tres",
 ]
 const CAPTAIN_PATH := "res://resources/captain.tres"
 

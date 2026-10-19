@@ -24,6 +24,8 @@ extends Resource
 @export var chain_to := -1
 ## Enemies only: how much more (or less) guard a blocked hit costs.
 @export var guard_cost_mult := 1.0
+## Enemies only: a blocked hit from this attack recoils the attacker (see Weapon.block_stun_time).
+@export var block_stun := true
 ## Enemies only: a bare-weapon guard cannot stop this attack. A shield can, and a parry beats it.
 @export var breaks_bare_guard := false
 
