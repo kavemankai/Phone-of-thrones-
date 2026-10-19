@@ -1,3 +1,5 @@
+# Shieldwall combat test
+
 ## Version 0.9 combat-polish candidate (branch: combat-polish-v0.9)
 
 This branch adds a controlled A/B playtest rather than replacing the established 0.8 feel. The start screen now has two independent toggles. **Attacks: HOLD** retains tap-for-light / hold-for-heavy. **Attacks: SPLIT** shows a separate HEAVY button and performs light and heavy attacks on button-down. **Guard: ALL-ROUND** retains the 360-degree defence. **Guard: DIRECTIONAL** restricts shield/bare guard arcs to 140/110 degrees, uses parry windows of 0.30/0.23 s instead of 0.40/0.32 s, and applies 0.55x block-stun duration. Retry retains the selected trial modes; resetting the toggles returns to the original numbers.
@@ -7,8 +9,6 @@ Defensive transitions (pressing dodge or guard, or releasing guard) are now proc
 **Verification status:** New deterministic regression checks are included in `tests/run_tests.gd`, but **the 0.9 code has not been executed in Godot or tested on Android from this review environment**. The 0.8 results in TEST_REPORT.md do not certify 0.9. Before distributing this candidate, run the checks and Android export in `docs/v0.9-playtest.md`, then play it on a physical phone.
 
 
-
-# Shieldwall combat test
 
 A Godot prototype for one question: does fighting melee enemies feel responsive and readable on a phone, with two thumbs? One hero with a choice of five weapons and an optional shield, one small arena, three identical enemies followed by a solo captain. Nothing from the larger Shieldwall game is in here.
 

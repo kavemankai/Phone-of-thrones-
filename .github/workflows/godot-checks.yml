@@ -1,0 +1,36 @@
+name: Godot headless checks
+
+on:
+  push:
+    branches:
+      - combat-polish-v0.9
+  pull_request:
+    paths:
+      - '**/*.gd'
+      - '**/*.tscn'
+      - '**/*.tres'
+      - project.godot
+      - '.github/workflows/godot-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  combat-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.2
+          use-dotnet: false
+          include-templates: false
+      - name: Import project
+        run: godot --headless --path . --import
+      - name: Run deterministic combat tests
+        run: godot --headless --path . --script tests/run_tests.gd
+      - name: Boot main scene headlessly
+        run: godot --headless --path . --quit-after 120
