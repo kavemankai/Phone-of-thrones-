@@ -6,7 +6,7 @@ This branch adds a controlled A/B playtest rather than replacing the established
 
 Defensive transitions (pressing dodge or guard, or releasing guard) are now processed before enemy strikes in each simulation slice. Enemy attacks still resolve before hero attack damage, so simultaneous killing blows still count as defeat. Readability additions include enlarged telegraph outlines, team/elite ground rings, a CAPTAIN label, hero combat cues and an A/B indicator in the HUD.
 
-**Verification status:** New deterministic regression checks are included in `tests/run_tests.gd`, but **the 0.9 code has not been executed in Godot or tested on Android from this review environment**. The 0.8 results in TEST_REPORT.md do not certify 0.9. Before distributing this candidate, run the checks and Android export in `docs/v0.9-playtest.md`, then play it on a physical phone.
+**Verification status:** The first v0.9 GitHub Actions run used Godot 4.6.2 and reported **460 passed, 0 failed**, followed by a successful headless main-scene boot. The 0.8 results in TEST_REPORT.md remain separate historical results. An Android debug-build job is now included; its outcome must be checked separately. **No physical Android gameplay, frame-rate, audio or touch testing has been performed for v0.9.** See `docs/v0.9-playtest.md`.
 
 
 

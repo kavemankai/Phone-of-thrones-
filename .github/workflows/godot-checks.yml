@@ -34,3 +34,58 @@ jobs:
         run: godot --headless --path . --script tests/run_tests.gd
       - name: Boot main scene headlessly
         run: godot --headless --path . --quit-after 120
+
+  android-debug:
+    name: Build Android debug APK
+    needs: combat-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools build-tools;35.0.1 platforms;android-35'
+      - name: Install Godot and export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.2
+          use-dotnet: false
+          include-templates: true
+      - name: Configure Android export
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config/godot"
+          printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/java_sdk_path = "%s"\nexport/android/android_sdk_path = "%s"\n' "$JAVA_HOME" "$ANDROID_SDK_ROOT" > "$HOME/.config/godot/editor_settings-4.6.tres"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/debug.keystore" -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/debug.keystore" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> "$GITHUB_ENV"
+      - name: Import and export APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --import
+          mkdir -p build
+          godot --headless --path . --export-debug Android build/shieldwall-debug.apk
+          test -s build/shieldwall-debug.apk
+      - name: Verify APK signature and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$ANDROID_SDK_ROOT/build-tools/35.0.1/apksigner" verify --verbose build/shieldwall-debug.apk
+          "$ANDROID_SDK_ROOT/build-tools/35.0.1/aapt" dump badging build/shieldwall-debug.apk | grep -E '^package:|^sdkVersion:|^targetSdkVersion:'
+          sha256sum build/shieldwall-debug.apk
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: shieldwall-v0.9.0-rc1-android-debug
+          path: build/shieldwall-debug.apk
+          if-no-files-found: error
+          retention-days: 14
