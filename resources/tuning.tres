@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="Tuning" format=3]
+
+[ext_resource type="Script" path="res://scripts/tuning.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+hero_max_hp = 100.0
+hero_speed = 180.0
+hero_radius = 16.0
+half_speed_mult = 0.5
+aim_cone_deg = 90.0
+light_damage = 10.0
+light_reach = 65.0
+light_arc_deg = 90.0
+light_windup = 0.1
+light_active = 0.08
+light_recover = 0.22
+heavy_hold_time = 0.35
+heavy_damage = 25.0
+heavy_reach = 85.0
+heavy_arc_deg = 140.0
+heavy_windup = 0.15
+heavy_active = 0.1
+heavy_recover = 0.4
+heavy_knockback = 35.0
+dodge_distance = 90.0
+dodge_duration = 0.3
+dodge_iframes = 0.16
+dodge_max_charges = 2
+dodge_recharge = 1.4
+hurt_duration = 0.15
+hit_immunity = 0.35
+enemy_max_hp = 30.0
+enemy_speed = 105.0
+enemy_radius = 16.0
+enemy_reach = 48.0
+enemy_arc_deg = 100.0
+enemy_damage = 12.0
+enemy_windup = 0.65
+enemy_active = 0.1
+enemy_recover = 0.65
+enemy_attack_gap = 0.35
+enemy_lock_time = 0.25
+enemy_engage_range = 52.0
+enemy_hover_range = 90.0
+enemy_strafe_mult = 0.4
+enemy_stagger = 0.6
+max_commits = 2
+separation_speed = 300.0
+arena_size = Vector2(420, 480)
+hero_spawn_from_bottom = 100.0
+enemy_spawn_from_top = 100.0
+enemy_spawn_spread = 110.0
+control_band_fraction = 0.28
+joystick_radius = 90.0
+joystick_deadzone = 0.12
+result_delay = 0.6
