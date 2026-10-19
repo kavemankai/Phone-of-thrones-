@@ -363,7 +363,7 @@ func _apply_hits() -> void:
 		if HitShapes.circle_in_sector(position, facing, cur_attack.reach, cur_attack.arc,
 				e.position, e.radius):
 			hit_ids[id] = true
-			e.take_hit(cur_attack.damage, position, cur_attack.knockback)
+			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.heavy)
 			hit_landed.emit(e, cur_attack.heavy)
 
 

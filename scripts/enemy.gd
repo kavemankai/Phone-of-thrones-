@@ -37,6 +37,11 @@ var cooldown := 0.0
 var strafe_sign := 1.0
 var flash := 0.0
 var fade := 0.0
+## Stagger: seconds left and the length it started with (for the timer), and the short
+## window after one ends in which a heavy hit cannot stagger it again.
+var stagger_left := 0.0
+var stagger_total := 0.0
+var stagger_immune := 0.0
 
 
 func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: int,
@@ -66,29 +71,48 @@ func is_captain() -> bool:
 	return profile != null and profile.id == "captain"
 
 
-## A parry cancels whatever the enemy was doing and leaves it dazed and open.
-func stagger() -> void:
+## Cancels whatever the enemy was doing and freezes it for `duration` seconds (a parry's
+## length by default). A hit on it ends the stagger early. Every cause goes through here, so
+## every stagger gets the timer.
+func stagger(duration := -1.0) -> void:
 	if state == State.DEAD:
 		return
+	stagger_total = duration if duration >= 0.0 else profile.stagger_time
+	stagger_left = stagger_total
 	controller.release(self)
 	hit_done = true
 	locked = false
 	_enter(State.STAGGER)
 
 
+func _wake() -> void:
+	stagger_left = 0.0
+	stagger_immune = tuning.stagger_immunity
+	cooldown = tuning.enemy_attack_gap
+	_enter(State.POSITION)
+
+
 func is_staggered() -> bool:
 	return state == State.STAGGER
 
 
-## Wind-up, strike and recovery: the enemy holds its ground and cannot be shoved by others.
+## Wind-up, strike and recovery: the attack slot is held.
 func is_committed() -> bool:
 	return state == State.WINDUP or state == State.ACTIVE or state == State.RECOVER
 
 
-func take_hit(damage: float, from: Vector2, knockback: float) -> void:
+## Committed or frozen: the enemy holds its ground and other bodies cannot shove it.
+func is_immovable() -> bool:
+	return is_committed() or state == State.STAGGER
+
+
+## A heavy hit staggers (unless the enemy only just woke up); any hit on a staggered enemy
+## does extra damage and wakes it.
+func take_hit(damage: float, from: Vector2, knockback: float, heavy := false) -> void:
 	if state == State.DEAD:
 		return
-	if state == State.STAGGER:
+	var was_staggered := state == State.STAGGER
+	if was_staggered:
 		damage *= tuning.stagger_damage_mult
 	hp -= damage
 	flash = 0.12
@@ -104,6 +128,10 @@ func take_hit(damage: float, from: Vector2, knockback: float) -> void:
 		controller.release(self)
 		died.emit()
 	else:
+		if was_staggered:
+			_wake()
+		elif heavy and stagger_immune <= 0.0 and profile.heavy_stagger_time > 0.0:
+			stagger(profile.heavy_stagger_time)
 		damaged.emit(knockback > 0.0)
 
 
@@ -115,6 +143,7 @@ func step(dt: float) -> void:
 	if state == State.DEAD:
 		return
 	cooldown = maxf(0.0, cooldown - dt)
+	stagger_immune = maxf(0.0, stagger_immune - dt)
 	state_time += dt
 	match state:
 		State.APPROACH, State.POSITION:
@@ -127,9 +156,9 @@ func step(dt: float) -> void:
 			if state_time >= cur.active:
 				_enter(State.RECOVER)
 		State.STAGGER:
-			if state_time >= profile.stagger_time:
-				cooldown = tuning.enemy_attack_gap
-				_enter(State.POSITION)
+			stagger_left -= dt
+			if stagger_left <= 0.0:
+				_wake()
 		State.RECOVER:
 			if state_time >= cur.recover:
 				if cur.chain_to >= 0:
@@ -276,6 +305,14 @@ func _draw() -> void:
 	var bar := Vector2(-w * 0.5, -height - 16.0)
 	draw_rect(Rect2(bar, Vector2(w, 5.0)), Color(0, 0, 0, 0.6))
 	draw_rect(Rect2(bar, Vector2(w * clampf(hp / profile.max_hp, 0.0, 1.0), 5.0)), Color(0.9, 0.25, 0.25))
+	if state == State.STAGGER:
+		# Stagger timer: a bar and the seconds left, whatever caused the stagger.
+		var tb := Vector2(-w * 0.5, -height - 30.0)
+		var frac := clampf(stagger_left / maxf(stagger_total, 0.001), 0.0, 1.0)
+		draw_rect(Rect2(tb, Vector2(w, 6.0)), Color(0, 0, 0, 0.65))
+		draw_rect(Rect2(tb, Vector2(w * frac, 6.0)), Color(1.0, 0.85, 0.25))
+		draw_string(ThemeDB.fallback_font, tb + Vector2(0.0, -3.0), "%.1f" % maxf(stagger_left, 0.0),
+				HORIZONTAL_ALIGNMENT_CENTER, w, 17, Color.WHITE)
 
 
 func _wedge_polygon() -> PackedVector2Array:

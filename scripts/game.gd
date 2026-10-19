@@ -344,7 +344,7 @@ func _resolve_overlaps(dt: float) -> void:
 	var hero_solid := hero.state != Hero.State.DODGE and not hero.is_dead()
 	for i in alive.size():
 		var a: Enemy = alive[i]
-		if hero_solid and not a.is_committed():
+		if hero_solid and not a.is_immovable():
 			_push_from_point(a, hero.position, hero.radius, max_push)
 		for j in range(i + 1, alive.size()):
 			var b: Enemy = alive[j]
@@ -355,11 +355,11 @@ func _resolve_overlaps(dt: float) -> void:
 				continue
 			var dir := d / dist if dist > 0.001 else Vector2.from_angle(float(i + j))
 			var push := minf(min_dist - dist, max_push)
-			if a.is_committed() and b.is_committed():
+			if a.is_immovable() and b.is_immovable():
 				continue
-			elif a.is_committed():
+			elif a.is_immovable():
 				b.position = b.clamp_to_arena(b.position + dir * push)
-			elif b.is_committed():
+			elif b.is_immovable():
 				a.position = a.clamp_to_arena(a.position - dir * push)
 			else:
 				a.position = a.clamp_to_arena(a.position - dir * push * 0.5)

@@ -134,6 +134,9 @@ func _initialize() -> void:
 	test_block_arc_and_costs()
 	test_guard_break_and_regen()
 	test_parry()
+	test_stagger_freeze_and_wake()
+	test_frozen_not_pushed()
+	test_heavy_stagger()
 	test_captain_vs_guard()
 	test_shield_equipment()
 	test_blocking_player()
@@ -1655,7 +1658,7 @@ func test_guard_break_and_regen() -> void:
 	h.free_all()
 
 
-func parry_rig(shield: bool, cap: bool, lead: float, behind := false) -> Array:
+func parry_rig(shield: bool, cap: bool, lead: float, behind := false, immune := false) -> Array:
 	## Enemy adjacent to the hero (in front, or behind it); the hero raises the guard `lead`
 	## seconds before the strike.
 	var r := Rig.new(root, T, Vector2(320, 360))
@@ -1663,6 +1666,8 @@ func parry_rig(shield: bool, cap: bool, lead: float, behind := false) -> Array:
 	r.run_enemies = true
 	var prof: EnemyProfile = (load("res://resources/captain.tres") as EnemyProfile) if cap else null
 	var e := r.add_enemy(Vector2(320, 390) if behind else Vector2(320, 330), 0, prof)
+	if immune:
+		e.stagger_immune = 10.0  # as if it had only just woken from a stagger
 	if cap:
 		e.pattern_pos = 1  # first the slash
 	while not (e.state == Enemy.State.WINDUP):
@@ -1684,14 +1689,7 @@ func test_parry() -> void:
 	check("raising the guard 0.10 s before the hit parries it (shield)", e1.state == Enemy.State.STAGGER and is_equal_approx(r1.hero.hp, 100.0))
 	check("a parry costs no guard", is_equal_approx(r1.hero.guard, 80.0))
 	check("the parried enemy's commitment is released", r1.ctrl.count() == 0)
-	var staggered_hp := e1.hp
-	r1.run(0.2)
-	e1.take_hit(10.0, r1.hero.position, 0.0)
-	check("a staggered enemy takes x1.5 damage", is_equal_approx(staggered_hp - e1.hp, 15.0), "dmg=%s" % (staggered_hp - e1.hp))
-	r1.run(0.7)
-	check("still dazed at 0.9 s", e1.state == Enemy.State.STAGGER)
-	r1.run(0.2)
-	check("recovers after 1.0 s into POSITION with the 0.35 s gap", e1.state == Enemy.State.POSITION and e1.cooldown <= T.enemy_attack_gap + 0.001)
+	check("a parry freezes for 3.0 s", is_equal_approx(e1.stagger_total, 3.0) and e1.stagger_left > 2.9)
 	r1.free_all()
 
 	var p2 := parry_rig(true, false, 0.30)
@@ -1723,10 +1721,7 @@ func test_parry() -> void:
 	var cr: Rig = c1[0]
 	var ce: Enemy = c1[1]
 	check("the captain can be parried, for 18 damage avoided", ce.state == Enemy.State.STAGGER and is_equal_approx(cr.hero.hp, 100.0))
-	cr.run(0.6)
-	check("captain stagger is 0.7 s: still dazed at 0.6 s", ce.state == Enemy.State.STAGGER)
-	cr.run(0.2)
-	check("and over by 0.8 s", ce.state == Enemy.State.POSITION)
+	check("the captain freezes for 3.0 s too", is_equal_approx(ce.stagger_total, 3.0))
 	cr.free_all()
 
 	# Parrying the first combo hit cancels the second.
@@ -1872,3 +1867,179 @@ func test_blocking_player() -> void:
 		play(normal, 240.0, true, true)
 		print("        (%s + Shield, blocking bot, normal HP: %s in %.1f s, hero hp %d, %d blocks, %d parries, %d guard breaks)" % [normal.weapon().display_name, Game.Outcome.keys()[normal.outcome], normal.fight_time, ceili(normal.hero.hp), n_counts[0], n_counts[1], n_counts[2]])
 		normal.queue_free()
+
+
+func test_stagger_freeze_and_wake() -> void:
+	section("Parry freeze: 3 s, or until hit")
+	for cap in [false, true]:
+		var p := parry_rig(true, cap, 0.10)
+		var r: Rig = p[0]
+		var e: Enemy = p[1]
+		var who := "captain" if cap else "grunt"
+		var pos0 := e.position
+		check("%s: parried into a stagger with a 3.0 s timer" % who, e.state == Enemy.State.STAGGER and is_equal_approx(e.stagger_total, 3.0) and e.stagger_left > 2.95)
+		r.run(1.0)
+		check("%s: timer counts down (about 2.0 left after 1 s)" % who, absf(e.stagger_left - 2.0) < 0.03, "left=%s" % e.stagger_left)
+		r.run(1.8)
+		check("%s: still frozen at 2.8 s, has not moved or attacked" % who, e.state == Enemy.State.STAGGER and e.position == pos0 and r.hurts == 0 and is_equal_approx(r.hero.hp, 100.0))
+		r.run(0.3)
+		check("%s: wakes at 3.0 s into waiting, with the 0.35 s gap" % who, e.state == Enemy.State.POSITION and e.cooldown <= T.enemy_attack_gap + 0.001 and e.stagger_left == 0.0)
+		r.free_all()
+
+	# A hit ends it at once, for x2.0.
+	var w := parry_rig(true, false, 0.10)
+	var wr: Rig = w[0]
+	var we: Enemy = w[1]
+	wr.run(1.0)
+	var hp0 := we.hp
+	we.take_hit(10.0, wr.hero.position, 0.0)
+	check("a light hit on a frozen enemy does x2.0 (20)", is_equal_approx(hp0 - we.hp, 20.0), "dmg=%s" % (hp0 - we.hp))
+	check("and wakes it at once, with the attack gap and re-stagger immunity", we.state == Enemy.State.POSITION and we.stagger_left == 0.0 and we.cooldown <= T.enemy_attack_gap + 0.001 and is_equal_approx(we.stagger_immune, 1.0))
+	var hp1 := we.hp
+	we.take_hit(10.0, wr.hero.position, 0.0)
+	check("the next hit is ordinary damage", is_equal_approx(hp1 - we.hp, 10.0))
+	wr.free_all()
+
+	# Small hits are doubled too, and a later hit can finish the enemy.
+	var k := parry_rig(true, false, 0.10)
+	k[1].hp = 5.0
+	k[1].take_hit(1.0, k[0].hero.position, 0.0)
+	check("the x2.0 applies to small hits too (1 becomes 2) and still wakes it", is_equal_approx(k[1].hp, 3.0) and k[1].state == Enemy.State.POSITION)
+	k[1].take_hit(10.0, k[0].hero.position, 0.0)
+	check("a following hit can finish it", k[1].is_dead())
+	k[0].free_all()
+
+
+func test_frozen_not_pushed() -> void:
+	section("A frozen enemy is held in place")
+	var g := make_game()
+	g.tuning.hero_max_hp = 100000.0
+	g.start_fight(Game.Mode.ONE)
+	var frozen: Enemy = g.enemies[0]
+	frozen.stagger(3.0)
+	var spot := frozen.position
+	var other := g._add_enemy(spot + Vector2(3, 3), 1, null)
+	g.hero.position = spot + Vector2(-4, 2)
+	for i in 30:
+		g.step(1.0 / 60.0)
+	check("bodies overlapping a frozen enemy do not push it", frozen.position == spot and frozen.state == Enemy.State.STAGGER)
+	check("the other enemy is the one that gets shoved apart", other.position.distance_to(spot) > 3.0 * 1.4143 + 1.0)
+	g.input.key_move = Vector2(-1, 0)
+	for i in 20:
+		g.step(1.0 / 60.0)
+	check("hero walking into a frozen enemy leaves it where it was", frozen.position == spot)
+	g.queue_free()
+
+
+func heavy_hit(w: Weapon) -> Rig:
+	## A grunt directly ahead takes a real heavy attack. The grunt is not stepped, so only the
+	## hit decides its state.
+	var r := Rig.new(root, T)
+	r.use_weapon(w)
+	var e := r.add_enemy(r.hero.position + Vector2(0, -w.heavy.reach * 0.6))
+	e.hp = 1000.0
+	r.input.press_attack(false)
+	r.run(0.5, 0.01)
+	r.input.release_attack(false)
+	r.run(0.4)
+	return r
+
+
+func test_heavy_stagger() -> void:
+	section("Heavy hits stagger; light hits do not")
+	var sword := Weapon.sword_from(T)
+	var hr := heavy_hit(sword)
+	var he: Enemy = hr.enemies[0]
+	check("a heavy hit staggers a grunt for 1.0 s", he.state == Enemy.State.STAGGER and is_equal_approx(he.stagger_total, 1.0) and he.stagger_left > 0.0, "state=%d total=%s" % [he.state, he.stagger_total])
+	check("the heavy's own damage is ordinary (25) and knockback still applies", is_equal_approx(he.hp, 975.0))
+	hr.free_all()
+
+	var lr := Rig.new(root, T)
+	var le := lr.add_enemy(lr.hero.position + Vector2(0, -45))
+	le.hp = 1000.0
+	lr.input.press_attack(false)
+	lr.tick(0.005)
+	lr.input.release_attack(false)
+	lr.run(1.0)
+	check("a light hit damages but does not stagger", le.state != Enemy.State.STAGGER and is_equal_approx(le.hp, 990.0))
+	lr.free_all()
+
+	# Two enemies in the arc are both staggered.
+	var two := Rig.new(root, T)
+	two.use_weapon(sword)
+	var t1 := two.add_enemy(Vector2(320, 450))
+	var t2 := two.add_enemy(Vector2(345, 455), 1)
+	t1.hp = 1000.0
+	t2.hp = 1000.0
+	two.input.press_attack(false)
+	two.run(0.5, 0.01)
+	two.input.release_attack(false)
+	two.run(0.4)
+	check("a heavy that hits two enemies staggers both", t1.state == Enemy.State.STAGGER and t2.state == Enemy.State.STAGGER)
+	two.free_all()
+
+	# It interrupts a strike.
+	var wr := Rig.new(root, T, Vector2(320, 500))
+	wr.run_enemies = true
+	var winder := wr.add_enemy(Vector2(320, 470))
+	while winder.state != Enemy.State.WINDUP:
+		wr.tick(0.005)
+	while winder.state_time < 0.4:
+		wr.tick(0.005)
+	check("the grunt holds a commitment mid wind-up", wr.ctrl.count() == 1)
+	winder.take_hit(25.0, wr.hero.position, 35.0, true)
+	check("a heavy hit cancels the wind-up and releases the slot", winder.state == Enemy.State.STAGGER and wr.ctrl.count() == 0)
+	wr.hero.position = Vector2(320, 360)  # knockback moved it; stand right beside it again
+	winder.position = Vector2(320, 330)
+	wr.run(0.9)
+	check("the interrupted strike never lands", is_equal_approx(wr.hero.hp, 100.0) and wr.hurts == 0)
+	wr.free_all()
+
+	# The captain is staggered more briefly.
+	var cr := Rig.new(root, T, Vector2(320, 500))
+	var cap := cr.add_enemy(Vector2(320, 300), 0, load("res://resources/captain.tres") as EnemyProfile)
+	cap.take_hit(25.0, cr.hero.position, 35.0, true)
+	check("a heavy hit staggers the captain for 0.5 s", cap.state == Enemy.State.STAGGER and is_equal_approx(cap.stagger_total, 0.5))
+	cr.free_all()
+
+	# A profile with no heavy stagger is never staggered by a heavy.
+	var rr := Rig.new(root, T, Vector2(320, 500))
+	var none_profile := EnemyProfile.grunt_from(T)
+	none_profile.heavy_stagger_time = 0.0
+	var tough := rr.add_enemy(Vector2(320, 300), 0, none_profile)
+	tough.hp = 1000.0
+	tough.take_hit(25.0, rr.hero.position, 35.0, true)
+	check("heavy_stagger_time = 0 turns the heavy stagger off", tough.state != Enemy.State.STAGGER)
+	rr.free_all()
+
+	# No stun-lock.
+	var ir := Rig.new(root, T, Vector2(320, 500))
+	ir.run_enemies = true
+	var ie := ir.add_enemy(Vector2(320, 150))
+	ie.hp = 1000.0
+	ie.cooldown = 1000.0
+	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	check("first heavy: staggered", ie.state == Enemy.State.STAGGER)
+	ir.run(1.05)
+	check("it wakes after 1.0 s and cannot be heavy-staggered for 1.0 s", ie.state != Enemy.State.STAGGER and ie.stagger_immune > 0.9)
+	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	check("a heavy inside the window damages but does not stagger", ie.state != Enemy.State.STAGGER and is_equal_approx(ie.hp, 950.0))
+	ir.run(1.0)
+	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	check("a heavy after the window staggers again", ie.state == Enemy.State.STAGGER)
+	ir.free_all()
+
+	# A heavy waking a parry-frozen enemy: x2.0, no re-stagger.
+	var pr := parry_rig(true, true, 0.10)
+	var pe: Enemy = pr[1]
+	pr[0].run(0.5)
+	var before := pe.hp
+	pe.take_hit(25.0, pr[0].hero.position, 35.0, true)
+	check("a heavy on a parry-frozen captain does x2.0 (50)", is_equal_approx(before - pe.hp, 50.0), "dmg=%s" % (before - pe.hp))
+	check("and does not stagger it again", pe.state == Enemy.State.POSITION)
+	pr[0].free_all()
+
+	# A parry ignores the re-stagger window.
+	var im := parry_rig(true, false, 0.10, false, true)
+	check("a parry still works on an enemy inside the immunity window", im[1].state == Enemy.State.STAGGER and is_equal_approx(im[1].stagger_total, 3.0))
+	im[0].free_all()

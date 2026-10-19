@@ -59,8 +59,24 @@ Hold BLOCK to raise a guard. By default it covers **every direction** (360 degre
 - **Shield**: a toggle on the start screen, for the one-handed weapons (Sword, Spear). Axe and Daggers are two-handed, so the toggle is disabled for them and they use the bare guard. Carrying a shield costs 5% walking speed.
 - **Raising the guard** works from idle, and cancels a charge. It is refused during a swing, while hurt and during a guard break. You walk at 40% speed while blocking and cannot attack until you lower it. Dodge exits a block. After lowering, it cannot go up again for 0.35 s.
 - **Guard meter**: each block drains it. If a block empties it, that hit is still absorbed, then you are stunned for 0.8 s (hits during the stun land) and the meter comes back at half. It refills at 25 per second starting 0.6 s after your last block, only while the guard is down.
-- **Parry**: if a hit arrives within the parry window of raising the guard, it costs nothing and does nothing, and the attacker is staggered for 1.0 s (the captain 0.7 s). Its attack and any combo are cancelled, and your hits do 1.5x damage to it while it is dazed. A parry beats every attack, including the captain's lunge, with or without a shield.
+- **Parry**: if a hit arrives within the parry window of raising the guard, it costs nothing and does nothing, and the attacker is **frozen for 3 seconds or until you hit it** (see Stagger). A parry beats every attack, including the captain's lunge, with or without a shield.
 - **The captain's lunge** costs double guard against a shield, and **breaks a bare-weapon guard**: with no shield the block does nothing and the full 22 lands. Only a parry or a dodge beats it. The slash and both combo hits are ordinary blocks.
+
+## Stagger
+
+A staggered enemy is frozen in place: it cannot move or attack, other bodies cannot shove it, and its attack, combo or lunge is cancelled. Every staggered enemy shows a small timer (a bar and the seconds left) above its health bar, whatever caused the stagger.
+
+| | Parry | Heavy hit |
+| --- | --- | --- |
+| Cause | You parry its strike | A heavy attack hits it |
+| Frozen for | 3.0 s (grunt and captain) | 1.0 s (grunt), 0.5 s (captain) |
+
+- **Any hit wakes it**: the first hit on a staggered enemy does **double damage** and ends the stagger. The enemy goes back to waiting with the usual 0.35 s gap. The hit that causes a heavy stagger is ordinary damage.
+- **No stun-lock**: once a stagger ends, the enemy cannot be heavy-staggered again for 1.0 s. A parry ignores that window.
+- **Light hits never stagger**; they only wake an enemy that is already frozen.
+- A heavy that hits several enemies staggers each of them.
+
+A parry therefore gives you a free hit with double damage and up to 3 s to reposition or heal; a heavy interrupts what the enemy was doing and sets up a double-damage follow-up. Heavy staggers override the original brief's rule that basic attacks do not interrupt an enemy's wind-up. `heavy_stagger_time = 0` in `captain.tres` (or the grunt profile) turns it off.
 
 ## The fight
 
@@ -107,6 +123,8 @@ Values you are most likely to touch:
 | Arena feels cramped or empty | `arena_size`, `spawn_axis_dist` (see above) |
 | Captain too hard or too easy | `captain.tres` (HP, attack damage and timings), `captain_heal` |
 | Parry too hard to hit, or too easy | `parry_window_shield`, `parry_window_bare` |
+| Parry reward too big or small | `stagger_time` (EnemyProfile), `stagger_damage_mult` |
+| Heavies too strong | `heavy_stagger_time` (EnemyProfile), `stagger_immunity`, the weapon's heavy damage |
 | Block too strong or too weak | `block_arc_*`, `guard_max_*`, `guard_cost_*`, `block_reduction_*`, `guard_regen`, `guard_break_time` |
 | A weapon feels weak or too strong | its `.tres` damage and timings |
 
@@ -198,6 +216,8 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - **Aim assist snaps fully to the target** when one is inside the 90-degree cone and the swing's reach.
 - **Dodge passes through enemy bodies.** Walking into an enemy pushes the enemy, not the hero.
 - **The UI is built in code**, not as separate scenes. Only the main, hero and enemy nodes are scenes.
+- **Heavy hits stagger** (1.0 s grunt, 0.5 s captain, 1.0 s re-stagger immunity). These numbers are my first-pass choices. A heavy now interrupts, freezes and sets up a double-damage follow-up, so it is likely the best attack; that skews the tap/hold test toward holding.
+- **Frozen enemies are immovable.** Other enemies and the hero walk through or around them rather than shoving them.
 - **Guard and parry use a meter and a timing window**, not stamina for everything. The parry window is 0.18 s with a shield and 0.12 s bare-handed. On a real phone, touch latency is easily 50 to 100 ms, so these may need widening.
 - **BLOCK is a third right-thumb button**, above ATTACK, radius 52 (the plan said 56; 52 keeps it clear of ATTACK). Holding it means no attacking. If that feels cramped, the fallback is moving it left of DODGE.
 - **The guard is all-round by default.** That removes positioning from blocking: the shield no longer has a wider arc than a bare weapon, and flanking does nothing against a raised guard. What still separates them is the meter, the chip damage, the parry window and the lunge. If it makes block too easy, narrow the arcs.

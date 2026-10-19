@@ -78,7 +78,8 @@ func _captain() -> EnemyProfile:
 	p.color = Color(0.55, 0.08, 0.14)
 	p.cap_color = Color(0.95, 0.78, 0.2)
 	p.bar_width = 64.0
-	p.stagger_time = 0.7
+	p.stagger_time = 3.0
+	p.heavy_stagger_time = 0.5
 
 	var slash := AttackDef.make("Slash", 18.0, 62.0, 120.0, 0.70, 0.10, 0.60)
 	slash.max_range = 62.0

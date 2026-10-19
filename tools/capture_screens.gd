@@ -90,6 +90,34 @@ func _initialize() -> void:
 		guard_n += 1
 	await _frames(2)
 	await _shot("12_parry_dazed")
+	# Same freeze two seconds later: the timer has run down to about 1.0.
+	await _advance(2.0)
+	await _shot("12b_parry_timer_one_second")
+
+	# Heavy-hit stagger on a grunt: a 1.0 s freeze with its own timer.
+	game.shield_on = false
+	game.start_fight(Game.Mode.ONE, 0)
+	game.hero.position = Vector2(mid, 320)
+	var heavy_target: Enemy = game.enemies[0]
+	heavy_target.position = Vector2(mid, 290)
+	heavy_target.hp = 9999.0
+	heavy_target.cooldown = 1000.0
+	game.input.press_attack(false)
+	await _advance(0.45)
+	game.input.release_attack(false)
+	var hn := 0
+	while not heavy_target.is_staggered() and hn < 300:
+		game.step(1.0 / 60.0)
+		hn += 1
+	await _advance(0.2)
+	await _shot("12c_heavy_stagger_timer")
+
+	# The captain frozen by a parry (3 s).
+	game.start_fight(Game.Mode.CAPTAIN_ONLY, 0)
+	game.enemies[0].position = Vector2(mid, 250)
+	game.enemies[0].stagger()
+	await _advance(0.5)
+	await _shot("12d_captain_frozen_timer")
 
 	# Guard break.
 	game.start_fight(Game.Mode.ONE, 0)

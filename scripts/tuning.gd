@@ -112,8 +112,11 @@ extends Resource
 @export var parry_window_bare: float = 0.12
 ## After lowering the guard it cannot be raised again for this long.
 @export var block_reraise_delay: float = 0.35
-## Damage multiplier against an enemy staggered by a parry.
-@export var stagger_damage_mult: float = 1.5
+## Damage multiplier for the hit that wakes a staggered enemy.
+@export var stagger_damage_mult: float = 2.0
+## After a stagger ends an enemy cannot be heavy-staggered again for this long (no stun-lock).
+## A parry ignores it.
+@export var stagger_immunity: float = 1.0
 
 @export_group("Captain finale")
 ## Pause between the last grunt dying and the captain appearing.
