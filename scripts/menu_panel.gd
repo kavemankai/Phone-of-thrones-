@@ -52,7 +52,7 @@ func _ready() -> void:
 	box.add_child(weapon_label)
 	_weapon_row = HBoxContainer.new()
 	_weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	_weapon_row.add_theme_constant_override("separation", 12)
+	_weapon_row.add_theme_constant_override("separation", 8)
 	box.add_child(_weapon_row)
 	_weapon_desc = _label(24)
 	_weapon_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -117,8 +117,8 @@ func set_weapons(list: Array[Weapon]) -> void:
 		b.queue_free()
 	_weapon_buttons.clear()
 	for i in list.size():
-		var b := _toggle(list[i].display_name, _weapon_group, Vector2(146, 84))
-		b.add_theme_font_size_override("font_size", 28)
+		var b := _toggle(list[i].display_name, _weapon_group, Vector2(118, 84))
+		b.add_theme_font_size_override("font_size", 21)
 		b.pressed.connect(func(): set_weapon(i))
 		_weapon_row.add_child(b)
 		_weapon_buttons.append(b)

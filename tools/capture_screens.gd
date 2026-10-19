@@ -24,6 +24,9 @@ func _initialize() -> void:
 	game.menu.set_weapon(2)
 	await _frames(2)
 	await _shot("01c_menu_axe_no_shield")
+	game.menu.set_weapon(4)
+	await _frames(2)
+	await _shot("01d_menu_zweihander")
 	game.menu.set_weapon(0)
 
 	# Three enemies: first locked grunt wedge.
@@ -93,6 +96,55 @@ func _initialize() -> void:
 	# Same freeze two seconds later: the timer has run down to about 1.0.
 	await _advance(2.0)
 	await _shot("12b_parry_timer_one_second")
+
+	# Block mini stun: the guard goes up well before the strike, so it is a plain block and
+	# the grunt is left recoiling with a 1.2 s timer.
+	game.shield_on = true
+	game.start_fight(Game.Mode.ONE, 0)
+	game.hero.position = Vector2(mid, 320)
+	game.enemies[0].position = Vector2(mid, 290)
+	var blocked_grunt: Enemy = game.enemies[0]
+	game.input.press_block(false)
+	var bn := 0
+	while blocked_grunt.state != Enemy.State.STAGGER and bn < 1200:
+		game.step(1.0 / 60.0)
+		bn += 1
+	await _advance(0.2)
+	await _shot("12e_block_stun_timer")
+
+	# Daggers: ring swing, and a parry that kills.
+	game.shield_on = false
+	game.start_fight(Game.Mode.ONE, 3)
+	game.hero.position = Vector2(mid, 320)
+	game.enemies[0].position = Vector2(mid, 290)
+	game.enemies[0].hp = 9999.0
+	game.enemies[0].cooldown = 1000.0
+	game.input.press_attack(false)
+	game.step(1.0 / 120.0)
+	game.input.release_attack(false)
+	var dn := 0
+	while game.hero.state != Hero.State.ACTIVE and dn < 240:
+		game.step(1.0 / 240.0)
+		dn += 1
+	await _frames(2)
+	await _shot("05b_daggers_light_ring")
+	game.start_fight(Game.Mode.ONE, 3)
+	game.hero.position = Vector2(mid, 320)
+	game.enemies[0].position = Vector2(mid, 290)
+	var doomed: Enemy = game.enemies[0]
+	var dk := 0
+	while doomed.state != Enemy.State.WINDUP and dk < 600:
+		game.step(1.0 / 60.0)
+		dk += 1
+	while doomed.state_time < doomed.cur.windup - 0.10:
+		game.step(1.0 / 60.0)
+	game.input.press_block(false)
+	var dd := 0
+	while not doomed.is_dead() and dd < 240:
+		game.step(1.0 / 60.0)
+		dd += 1
+	await _frames(2)
+	await _shot("12f_dagger_parry_kill")
 
 	# Heavy-hit stagger on a grunt: a 1.0 s freeze with its own timer.
 	game.shield_on = false

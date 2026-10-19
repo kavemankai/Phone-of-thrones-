@@ -5,29 +5,29 @@
 
 [sub_resource type="Resource" id="Resource_er75v"]
 script = ExtResource("1_tmw6g")
-label = "Flurry"
-damage = 14.0
-reach = 55.0
-arc_deg = 100.0
-windup = 0.1
-active = 0.08
-recover = 0.22
+label = "Whirl"
+damage = 12.0
+reach = 50.0
+arc_deg = 360.0
+windup = 0.08
+active = 0.07
+recover = 0.18
 
 [sub_resource type="Resource" id="Resource_e3pt0"]
 script = ExtResource("1_tmw6g")
 label = "Stab"
-damage = 6.0
-reach = 45.0
-arc_deg = 80.0
-windup = 0.05
-active = 0.06
-recover = 0.12
+damage = 5.0
+reach = 40.0
+arc_deg = 360.0
+windup = 0.04
+active = 0.05
+recover = 0.09
 
 [resource]
 script = ExtResource("2_n7tsm")
 id = "daggers"
 display_name = "Daggers"
-description = "Speed. Very fast, short stabs. Faster walking, three dodges and quicker recharge."
+description = "Speed. A fast ring of short stabs that hits all around. Parrying kills. Faster walking, three dodges."
 light = SubResource("Resource_e3pt0")
 heavy = SubResource("Resource_er75v")
 move_mult = 1.1
@@ -40,3 +40,5 @@ dual = true
 one_handed = false
 parry_stagger_time = 2.0
 heavy_stagger_time = 0.6
+block_stun_time = 0.8
+parry_kill = true

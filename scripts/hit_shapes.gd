@@ -16,6 +16,8 @@ static func circle_in_sector(origin: Vector2, facing: Vector2, reach: float, arc
 		return true
 	if dist > reach + circle_r:
 		return false
+	if arc_deg >= 359.9:
+		return true  # a full ring: anything within reach is inside
 	var half := deg_to_rad(arc_deg) * 0.5
 	if absf(facing.angle_to(d)) <= half:
 		return true
@@ -31,6 +33,12 @@ static func circle_in_sector(origin: Vector2, facing: Vector2, reach: float, arc
 ## Sector outline relative to its apex, for drawing.
 static func sector_polygon(facing: Vector2, reach: float, arc_deg: float) -> PackedVector2Array:
 	var pts := PackedVector2Array()
+	if arc_deg >= 359.9:
+		# A full ring has no apex: just the circle.
+		var n := ARC_STEPS * 2
+		for i in n:
+			pts.append(Vector2.from_angle(TAU * float(i) / n) * reach)
+		return pts
 	pts.append(Vector2.ZERO)
 	var half := deg_to_rad(arc_deg) * 0.5
 	var base := facing.angle()

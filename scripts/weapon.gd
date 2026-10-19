@@ -25,6 +25,10 @@ extends Resource
 ## the enemy ends either early. This is the main difference between weapons (and, later, skills).
 @export var parry_stagger_time := 3.0
 @export var heavy_stagger_time := 1.0
+## How long this weapon's block recoils an attacker. A hit does not end it.
+@export var block_stun_time := 1.2
+## A parry with this weapon kills the attacker (or takes EnemyProfile.execute_fraction of its HP).
+@export var parry_kill := false
 
 
 ## The dictionary shape the hero uses while an attack plays.
@@ -55,4 +59,5 @@ static func sword_from(t: Tuning) -> Weapon:
 			t.heavy_windup, t.heavy_active, t.heavy_recover, t.heavy_knockback)
 	w.parry_stagger_time = t.parry_stagger_time
 	w.heavy_stagger_time = t.heavy_stagger_time
+	w.block_stun_time = t.block_stun_time
 	return w

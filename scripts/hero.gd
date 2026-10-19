@@ -45,6 +45,9 @@ var guard_wait := 0.0
 var block_cd := 0.0
 var parry_flash := 0.0
 var block_flash := 0.0
+## Ground-space walking velocity. It ramps toward the stick and is zeroed whenever an action
+## takes over movement (wind-up, strike, dodge, hurt, guard break, death).
+var velocity := Vector2.ZERO
 
 var _enemies: Array = []
 
@@ -99,9 +102,13 @@ func guard_reduction() -> float:
 	return tuning.block_reduction_shield if has_shield else tuning.block_reduction_bare
 
 
-## How long this weapon's parry freezes an attacker.
+## How long this weapon's parry freezes an attacker, and how long its block recoils one.
 func parry_stagger_time() -> float:
 	return weapon.parry_stagger_time
+
+
+func block_stun_time() -> float:
+	return weapon.block_stun_time
 
 
 func parry_window() -> float:
@@ -136,6 +143,7 @@ func reset(pos: Vector2) -> void:
 	block_cd = 0.0
 	parry_flash = 0.0
 	block_flash = 0.0
+	velocity = Vector2.ZERO
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
@@ -312,6 +320,9 @@ func take_hit(damage: float) -> bool:
 func _enter(s: State) -> void:
 	state = s
 	state_time = 0.0
+	if s == State.WINDUP or s == State.ACTIVE or s == State.DODGE or s == State.HURT \
+			or s == State.GUARD_BREAK or s == State.DEAD:
+		velocity = Vector2.ZERO
 
 
 func _step_charging(dt: float) -> void:
@@ -409,10 +420,13 @@ func _recharge_dodge(dt: float) -> void:
 
 func _move(dt: float, mult: float) -> void:
 	var v := input.move_vector()
+	var target := v * move_speed() * mult
+	var ramp := tuning.move_ramp_up if target.length_squared() >= velocity.length_squared() else tuning.move_ramp_down
+	velocity = velocity.move_toward(target, move_speed() / maxf(ramp, 0.001) * dt)
 	if v.length() > 0.001:
-		position += v * move_speed() * mult * dt
 		facing = v.normalized()
-		position = _clamp_to_arena(position)
+	if velocity.length_squared() > 0.000001:
+		position = _clamp_to_arena(position + velocity * dt)
 
 
 func _clamp_to_arena(p: Vector2) -> Vector2:
