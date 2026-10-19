@@ -234,6 +234,8 @@ func _raise_guard() -> void:
 
 
 func _in_guard_arc(origin: Vector2) -> bool:
+	if guard_arc() >= 360.0:
+		return true
 	var d := origin - position
 	if d.length() < 0.001:
 		return true
@@ -451,12 +453,17 @@ func _draw() -> void:
 			draw_polyline(outline, Color(1, 1, 1, 0.9), 2.0)
 	if state == State.BLOCK:
 		# The guard arc: a hit from inside it can be blocked. Same sector helper as every wedge.
-		var guard_poly := HitShapes.sector_polygon(facing, r + 34.0, guard_arc())
 		var guard_color := Color(1.0, 0.85, 0.3, 0.5) if parry_flash > 0.0 else Color(0.5, 0.8, 1.0, 0.16)
-		draw_colored_polygon(guard_poly, guard_color)
-		var guard_outline := guard_poly.duplicate()
-		guard_outline.append(guard_poly[0])
-		draw_polyline(guard_outline, Color(0.7, 0.9, 1.0, 0.55), 2.0)
+		if guard_arc() >= 360.0:
+			# All around: a ring instead of a wedge.
+			draw_circle(Vector2.ZERO, r + 34.0, guard_color)
+			draw_arc(Vector2.ZERO, r + 34.0, 0.0, TAU, 48, Color(0.7, 0.9, 1.0, 0.55), 2.0)
+		else:
+			var guard_poly := HitShapes.sector_polygon(facing, r + 34.0, guard_arc())
+			draw_colored_polygon(guard_poly, guard_color)
+			var guard_outline := guard_poly.duplicate()
+			guard_outline.append(guard_poly[0])
+			draw_polyline(guard_outline, Color(0.7, 0.9, 1.0, 0.55), 2.0)
 	if state == State.CHARGING:
 		if is_heavy_ready():
 			var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.02)

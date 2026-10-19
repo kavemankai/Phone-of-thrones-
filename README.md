@@ -46,11 +46,11 @@ Pick one on the start screen. It stays for the whole fight and across Retry. Tap
 
 ## Block, shield and parry
 
-Hold BLOCK to raise a guard. It covers an arc in front of you (a faint blue wedge on the ground shows exactly where), and the stick aims it. Hits from inside the arc are blocked; hits from outside it land normally.
+Hold BLOCK to raise a guard. By default it covers **every direction** (360 degrees), shown as a faint blue ring on the ground, so facing does not matter and attackers from behind are blocked and parried too. The arc is a tuning value (`block_arc_shield`, `block_arc_bare`): set it to 140 and 100 for a front-only guard, in which case the ring becomes a wedge, the stick aims it, and hits from outside it land normally.
 
 | | With shield | Bare weapon |
 | --- | --- | --- |
-| Guard arc | 140 degrees | 100 degrees |
+| Guard arc (default) | 360 degrees | 360 degrees |
 | Damage that gets through a block | none | 40% |
 | Guard meter | 80 | 40 |
 | Guard lost per blocked point of damage | 1.0 | 1.5 |
@@ -107,7 +107,7 @@ Values you are most likely to touch:
 | Arena feels cramped or empty | `arena_size`, `spawn_axis_dist` (see above) |
 | Captain too hard or too easy | `captain.tres` (HP, attack damage and timings), `captain_heal` |
 | Parry too hard to hit, or too easy | `parry_window_shield`, `parry_window_bare` |
-| Block too strong or too weak | `guard_max_*`, `guard_cost_*`, `block_reduction_*`, `guard_regen`, `guard_break_time` |
+| Block too strong or too weak | `block_arc_*`, `guard_max_*`, `guard_cost_*`, `block_reduction_*`, `guard_regen`, `guard_break_time` |
 | A weapon feels weak or too strong | its `.tres` damage and timings |
 
 ### Isometric view and arena size
@@ -200,7 +200,7 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - **The UI is built in code**, not as separate scenes. Only the main, hero and enemy nodes are scenes.
 - **Guard and parry use a meter and a timing window**, not stamina for everything. The parry window is 0.18 s with a shield and 0.12 s bare-handed. On a real phone, touch latency is easily 50 to 100 ms, so these may need widening.
 - **BLOCK is a third right-thumb button**, above ATTACK, radius 52 (the plan said 56; 52 keeps it clear of ATTACK). Holding it means no attacking. If that feels cramped, the fallback is moving it left of DODGE.
-- **The stick aims the guard.** Circling an enemy while blocking turns you away from it; the ground wedge shows where you are covered.
+- **The guard is all-round by default.** That removes positioning from blocking: the shield no longer has a wider arc than a bare weapon, and flanking does nothing against a raised guard. What still separates them is the meter, the chip damage, the parry window and the lunge. If it makes block too easy, narrow the arcs.
 - **Weapons are fight styles, not just stat swaps**: reach and arc shape, a forward step (spear heavy), movement speed and dodge economy differ. Weapon choice is on the start screen only; there is no mid-fight swap button.
 - **The sword and the grunt are defined by `tuning.tres`** (the brief's table), so the brief's numbers have one source. The other weapons and the captain are separate `.tres` files.
 - **Lunge hit area stays at the start position.** The captain slides forward during the strike, but the wedge is the one drawn at the start of the lunge, so what you saw is what hits.

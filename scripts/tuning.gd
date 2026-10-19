@@ -89,9 +89,10 @@ extends Resource
 @export var block_move_mult: float = 0.4
 ## Walking speed multiplier for carrying a shield at all.
 @export var shield_move_mult: float = 0.95
-## Guard arc, centred on facing. A hit from inside it can be blocked.
-@export var block_arc_shield: float = 140.0
-@export var block_arc_bare: float = 100.0
+## Guard arc in degrees, centred on facing. A hit from inside it can be blocked. 360 covers
+## every direction, so facing does not matter; try 140 and 100 for a front-only guard.
+@export var block_arc_shield: float = 360.0
+@export var block_arc_bare: float = 360.0
 ## Share of a blocked hit's damage that is stopped (1 = all, 0.6 = 60%).
 @export var block_reduction_shield: float = 1.0
 @export var block_reduction_bare: float = 0.6

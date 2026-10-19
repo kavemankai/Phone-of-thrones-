@@ -1518,9 +1518,10 @@ func test_guard_rules() -> void:
 	g.queue_free()
 
 
-func guard_rig(shield: bool, settle := 0.30) -> Rig:
-	var r := Rig.new(root, T, Vector2(320, 360))
-	r.use_weapon(Weapon.sword_from(T), shield)
+func guard_rig(shield: bool, settle := 0.30, t: Tuning = null) -> Rig:
+	var tu := t if t != null else T
+	var r := Rig.new(root, tu, Vector2(320, 360))
+	r.use_weapon(Weapon.sword_from(tu), shield)
 	r.input.press_block(false)
 	r.run(settle, 0.01)
 	return r
@@ -1529,17 +1530,42 @@ func guard_rig(shield: bool, settle := 0.30) -> Rig:
 func test_block_arc_and_costs() -> void:
 	section("Guard arc, damage and guard cost")
 	var atk := AttackDef.make("Test", 12.0, 50.0, 100.0, 0.65, 0.10, 0.65)
+	# The arc is a tuning value, so the narrow-arc logic is still tested with 140 / 100 degrees.
+	var narrow := T.duplicate() as Tuning
+	narrow.block_arc_shield = 140.0
+	narrow.block_arc_bare = 100.0
 	var cases := [[true, 69.0, true], [true, 75.0, false], [false, 45.0, true], [false, 55.0, false], [true, 180.0, false], [false, 180.0, false]]
 	for cs in cases:
-		var r := guard_rig(cs[0])
+		var r := guard_rig(cs[0], 0.30, narrow)
 		var origin := r.hero.position + Vector2.UP.rotated(deg_to_rad(cs[1])) * 40.0
 		var res := r.hero.receive_attack(12.0, origin, atk)
 		var blocked := res == Hero.HitResult.BLOCKED
-		check("%s guard vs a hit from %d degrees: %s" % ["shield" if cs[0] else "bare", int(cs[1]), "blocked" if cs[2] else "hit"],
+		check("narrow arc, %s guard vs a hit from %d degrees: %s" % ["shield" if cs[0] else "bare", int(cs[1]), "blocked" if cs[2] else "hit"],
 				blocked == cs[2] and (res == Hero.HitResult.HIT) == (not cs[2]), "result=%d" % res)
 		if not cs[2]:
 			check("  an unblocked hit hurts and interrupts the guard", r.hero.state == Hero.State.HURT and is_equal_approx(r.hero.hp, 88.0))
 		r.free_all()
+
+	# Default: 360 degrees. Every direction is covered, whichever way the hero faces.
+	check("default guard arc is 360 degrees, shield and bare", is_equal_approx(T.block_arc_shield, 360.0) and is_equal_approx(T.block_arc_bare, 360.0))
+	for shield in [true, false]:
+		var all_ok := true
+		var bad_angles := []
+		for deg in [0, 45, 90, 135, 179, 180, -179, -135, -90, -45, 1]:
+			var rr := guard_rig(shield)
+			var org := rr.hero.position + Vector2.UP.rotated(deg_to_rad(float(deg))) * 40.0
+			var res_all := rr.hero.receive_attack(12.0, org, atk)
+			if res_all != Hero.HitResult.BLOCKED or rr.hero.state != Hero.State.BLOCK:
+				all_ok = false
+				bad_angles.append(deg)
+			rr.free_all()
+		check("360 guard (%s): a hit from any of 11 directions, including behind, is blocked" % ("shield" if shield else "bare"), all_ok, str(bad_angles))
+	var facing_rig := guard_rig(true)
+	facing_rig.input.key_move = Vector2(1, 0)
+	facing_rig.run(0.3, 0.01)
+	var turned_res := facing_rig.hero.receive_attack(12.0, facing_rig.hero.position + Vector2(0, 40), atk)
+	check("facing a different way changes nothing: still blocked", turned_res == Hero.HitResult.BLOCKED)
+	facing_rig.free_all()
 
 	var s := guard_rig(true)
 	var res_s := s.hero.receive_attack(12.0, s.hero.position + Vector2(0, -40), atk)
@@ -1563,21 +1589,26 @@ func test_block_arc_and_costs() -> void:
 	check("it stays at 68 after the strike ends", is_equal_approx(e.hero.guard, 68.0))
 	e.free_all()
 
-	# The drawn guard wedge equals the guard test.
+	# The drawn guard area equals the guard test: a full ring at 360, a wedge when narrowed.
 	for shield in [true, false]:
-		var gr := guard_rig(shield)
-		var arc := gr.hero.guard_arc()
-		var poly := HitShapes.sector_polygon(gr.hero.facing, 50.0, arc)
-		var bad := 0
-		for deg in range(0, 360):
-			var edge_gap := absf(absf(deg if deg <= 180 else deg - 360) - arc * 0.5)
-			if edge_gap < 0.6:
-				continue
-			var dir := Vector2.UP.rotated(deg_to_rad(float(deg)))
-			if Geometry2D.is_point_in_polygon(dir * 30.0, poly) != gr.hero._in_guard_arc(gr.hero.position + dir * 30.0):
-				bad += 1
-		check("%s guard wedge equals the block test (%d degrees)" % ["shield" if shield else "bare", int(arc)], bad == 0, "bad=%d" % bad)
-		gr.free_all()
+		for arc_deg in [360.0, 140.0, 100.0]:
+			var tw := T.duplicate() as Tuning
+			tw.block_arc_shield = arc_deg
+			tw.block_arc_bare = arc_deg
+			var gr := guard_rig(shield, 0.30, tw)
+			var arc := gr.hero.guard_arc()
+			var poly := HitShapes.sector_polygon(gr.hero.facing, 50.0, arc) if arc < 360.0 else PackedVector2Array()
+			var bad := 0
+			for deg in range(0, 360):
+				var edge_gap := absf(absf(deg if deg <= 180 else deg - 360) - arc * 0.5)
+				if arc < 360.0 and edge_gap < 0.6:
+					continue
+				var dir := Vector2.UP.rotated(deg_to_rad(float(deg)))
+				var inside := true if arc >= 360.0 else Geometry2D.is_point_in_polygon(dir * 30.0, poly)
+				if inside != gr.hero._in_guard_arc(gr.hero.position + dir * 30.0):
+					bad += 1
+			check("%s guard area matches the block test at %d degrees" % ["shield" if shield else "bare", int(arc)], bad == 0, "bad=%d" % bad)
+			gr.free_all()
 
 
 func test_guard_break_and_regen() -> void:
@@ -1624,13 +1655,14 @@ func test_guard_break_and_regen() -> void:
 	h.free_all()
 
 
-func parry_rig(shield: bool, cap: bool, lead: float) -> Array:
-	## Enemy adjacent in front of the hero; the hero raises the guard `lead` seconds before the strike.
+func parry_rig(shield: bool, cap: bool, lead: float, behind := false) -> Array:
+	## Enemy adjacent to the hero (in front, or behind it); the hero raises the guard `lead`
+	## seconds before the strike.
 	var r := Rig.new(root, T, Vector2(320, 360))
 	r.use_weapon(Weapon.sword_from(T), shield)
 	r.run_enemies = true
 	var prof: EnemyProfile = (load("res://resources/captain.tres") as EnemyProfile) if cap else null
-	var e := r.add_enemy(Vector2(320, 330), 0, prof)
+	var e := r.add_enemy(Vector2(320, 390) if behind else Vector2(320, 330), 0, prof)
 	if cap:
 		e.pattern_pos = 1  # first the slash
 	while not (e.state == Enemy.State.WINDUP):
@@ -1675,6 +1707,17 @@ func test_parry() -> void:
 	var p5 := parry_rig(false, false, 0.08)
 	check("0.08 s before the hit parries bare-handed", p5[1].state == Enemy.State.STAGGER and is_equal_approx(p5[0].hero.hp, 100.0) and is_equal_approx(p5[0].hero.guard, 40.0))
 	p5[0].free_all()
+
+	# From behind: the hero faces up, the grunt stands below.
+	var pb := parry_rig(true, false, 0.10, true)
+	check("a parry works against an attacker behind you", pb[1].state == Enemy.State.STAGGER and is_equal_approx(pb[0].hero.hp, 100.0) and is_equal_approx(pb[0].hero.guard, 80.0))
+	pb[0].free_all()
+	var bb := parry_rig(true, false, 0.30, true)
+	check("a plain block works against an attacker behind you: guard 68, no damage", bb[1].state == Enemy.State.RECOVER and is_equal_approx(bb[0].hero.guard, 68.0) and is_equal_approx(bb[0].hero.hp, 100.0), "guard=%s hp=%s" % [bb[0].hero.guard, bb[0].hero.hp])
+	bb[0].free_all()
+	var bare_behind := parry_rig(false, false, 0.30, true)
+	check("bare-handed, a hit from behind is blocked too: guard 22, 4.8 chip", bare_behind[1].state == Enemy.State.RECOVER and is_equal_approx(bare_behind[0].hero.guard, 22.0) and is_equal_approx(bare_behind[0].hero.hp, 95.2), "guard=%s hp=%s" % [bare_behind[0].hero.guard, bare_behind[0].hero.hp])
+	bare_behind[0].free_all()
 
 	var c1 := parry_rig(true, true, 0.10)
 	var cr: Rig = c1[0]
@@ -1777,9 +1820,9 @@ func test_shield_equipment() -> void:
 	var daggers: Weapon = g.weapons[3]
 	check("sword and spear are one-handed, axe and daggers are not", sword.one_handed and spear.one_handed and not axe.one_handed and not daggers.one_handed)
 	g.hero.equip(sword, true)
-	check("shield with the sword: arc 140, guard 80, window 0.18", g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 140.0) and is_equal_approx(g.hero.guard_max(), 80.0) and is_equal_approx(g.hero.parry_window(), 0.18))
+	check("shield with the sword: arc 360, guard 80, window 0.18", g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 80.0) and is_equal_approx(g.hero.parry_window(), 0.18))
 	g.hero.equip(axe, true)
-	check("shield with the axe is ignored: arc 100, guard 40, window 0.12", not g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 100.0) and is_equal_approx(g.hero.guard_max(), 40.0) and is_equal_approx(g.hero.parry_window(), 0.12))
+	check("shield with the axe is ignored: arc 360, guard 40, window 0.12", not g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 40.0) and is_equal_approx(g.hero.parry_window(), 0.12))
 
 	g.menu.set_weapon(0)
 	g.menu.set_shield(true)
