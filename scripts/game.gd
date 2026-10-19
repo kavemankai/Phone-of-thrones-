@@ -36,6 +36,10 @@ var weapons: Array[Weapon] = []
 var weapon_index := 0
 ## Off-hand shield. Only takes effect with a one-handed weapon.
 var shield_on := false
+## A/B settings available on the start/result screen; original modes remain default.
+var split_attacks := false
+var directional_guard := false
+var original_defense: Dictionary = {}
 var captain_profile: EnemyProfile
 var captain_spawned := false
 ## True during the breather between the last grunt dying and the captain appearing.
@@ -64,6 +68,10 @@ func _ready() -> void:
 	if tuning == null:
 		push_warning("Could not load %s, using built-in defaults." % TUNING_PATH)
 		tuning = Tuning.new()
+	original_defense = {
+		"shield_arc": tuning.block_arc_shield, "bare_arc": tuning.block_arc_bare,
+		"shield_parry": tuning.parry_window_shield, "bare_parry": tuning.parry_window_bare
+	}
 	controller.configure(tuning)
 
 	weapons.append(Weapon.sword_from(tuning))
@@ -116,6 +124,8 @@ func _ready() -> void:
 	menu.set_weapons(weapons)
 	menu.fight_requested.connect(func(m: int, w: int, sh: bool):
 		shield_on = sh
+		split_attacks = menu.split_attacks
+		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
 
 	sfx = Sfx.new()
@@ -163,6 +173,13 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	controller.reset()
 	controls.reset()
 	input.clear()
+	# The trial changes only this Game's private tuning copy.
+	tuning.block_arc_shield = 140.0 if directional_guard else original_defense["shield_arc"]
+	tuning.block_arc_bare = 110.0 if directional_guard else original_defense["bare_arc"]
+	tuning.parry_window_shield = 0.30 if directional_guard else original_defense["shield_parry"]
+	tuning.parry_window_bare = 0.23 if directional_guard else original_defense["bare_parry"]
+	hero.block_stun_mult = 0.55 if directional_guard else 1.0
+	controls.separate_attacks = split_attacks
 	hero.equip(weapon(), shield_on)
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
@@ -181,6 +198,8 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	menu.set_mode(mode)
 	menu.set_weapon(weapon_index)
 	menu.set_shield(shield_on)
+	menu.set_split_attacks(split_attacks)
+	menu.set_directional_guard(directional_guard)
 	_set_state(State.FIGHTING)
 
 
@@ -234,8 +253,9 @@ func step(dt: float) -> void:
 
 func _sim_step(dt: float) -> void:
 	fight_time += dt
-	# Enemies resolve first: if a strike on the hero and the hero's killing blow land on the
-	# same step, the hero is already down and defeat takes priority.
+	# Input events arrive between simulation steps: honour a just-pressed dodge/block
+	# before collision, but still resolve enemy STRIKES before hero ATTACKS (tie = defeat).
+	hero.pre_resolve_defense()
 	for e in enemies:
 		e.step(dt)
 	hero.step(dt, enemies)

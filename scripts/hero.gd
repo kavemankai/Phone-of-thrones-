@@ -45,6 +45,11 @@ var guard_wait := 0.0
 var block_cd := 0.0
 var parry_flash := 0.0
 var block_flash := 0.0
+## Experimental defence preset only; all-round mode keeps the original value.
+var block_stun_mult := 1.0
+var cue_text := ""
+var cue_left := 0.0
+var cue_color := Color.WHITE
 ## Ground-space walking velocity. It ramps toward the stick and is zeroed whenever an action
 ## takes over movement (wind-up, strike, dodge, hurt, guard break, death).
 var velocity := Vector2.ZERO
@@ -108,7 +113,7 @@ func parry_stagger_time() -> float:
 
 
 func block_stun_time() -> float:
-	return weapon.block_stun_time
+	return weapon.block_stun_time * block_stun_mult
 
 
 func parry_window() -> float:
@@ -143,6 +148,8 @@ func reset(pos: Vector2) -> void:
 	block_cd = 0.0
 	parry_flash = 0.0
 	block_flash = 0.0
+	cue_text = ""
+	cue_left = 0.0
 	velocity = Vector2.ZERO
 	_enemies = []
 	modulate.a = 1.0
@@ -174,6 +181,30 @@ func dodge_recharge_left() -> float:
 	return recharge_time() - dodge_recharge_t
 
 
+## Called before enemies resolve their strikes on each Game simulation step.
+## Apply only immediate defensive transitions here; attack damage still resolves
+## AFTER enemies, preserving defeat on simultaneous killing blows.
+func pre_resolve_defense() -> void:
+	if state == State.DEAD:
+		return
+	# Releasing a block before impact must not grant a phantom guard frame.
+	if state == State.BLOCK and not input.block_down():
+		block_cd = tuning.block_reraise_delay
+		_enter(State.IDLE)
+	if input.dodge_pressed and state in [State.IDLE, State.CHARGING, State.RECOVER, State.BLOCK]:
+		if _try_dodge():
+			input.dodge_pressed = false
+			return
+	if input.block_down() and block_cd <= 0.0 and state in [State.IDLE, State.CHARGING]:
+		_raise_guard()
+
+
+func _show_cue(message: String, tint: Color) -> void:
+	cue_text = message
+	cue_color = tint
+	cue_left = 0.65
+
+
 func step(dt: float, enemies: Array) -> void:
 	if state == State.DEAD:
 		return
@@ -191,7 +222,9 @@ func step(dt: float, enemies: Array) -> void:
 				_raise_guard()
 				return
 			_move(dt, 1.0)
-			if input.attack_pressed:
+			if input.heavy_pressed:
+				_start_attack(true)
+			elif input.attack_pressed:
 				_enter(State.CHARGING)
 				charge_time = 0.0
 				_step_charging(0.0)
@@ -265,6 +298,7 @@ func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult
 	if state == State.BLOCK and _in_guard_arc(origin):
 		if state_time < parry_window():
 			parry_flash = 0.3
+			_show_cue("PARRY", Color(1.0, 0.85, 0.22))
 			guard_wait = tuning.guard_regen_delay
 			blocked.emit(true)
 			return HitResult.PARRIED
@@ -286,8 +320,10 @@ func _absorb(damage: float, atk: AttackDef) -> void:
 	guard = maxf(0.0, guard - damage * guard_cost_mult() * atk.guard_cost_mult)
 	guard_wait = tuning.guard_regen_delay
 	block_flash = 0.15
+	_show_cue("BLOCK", Color(0.6, 0.85, 1.0))
 	if guard <= 0.0:
 		_enter(State.GUARD_BREAK)
+		_show_cue("BROKEN", Color(1.0, 0.45, 0.2))
 		guard_broken.emit()
 	else:
 		blocked.emit(false)
@@ -308,6 +344,7 @@ func take_hit(damage: float) -> bool:
 	hp = maxf(0.0, hp - damage)
 	immune_time = tuning.hit_immunity
 	flash = 0.15
+	_show_cue("HIT", Color(1.0, 0.4, 0.3))
 	charge_time = 0.0
 	cur_attack = {}
 	if hp <= 0.0:
@@ -448,6 +485,7 @@ func _clamp_to_arena(p: Vector2) -> Vector2:
 
 
 func _process(delta: float) -> void:
+	cue_left = maxf(0.0, cue_left - delta)
 	flash = maxf(0.0, flash - delta)
 	parry_flash = maxf(0.0, parry_flash - delta)
 	block_flash = maxf(0.0, block_flash - delta)
@@ -532,6 +570,12 @@ func _draw() -> void:
 	draw_line(top, tip, Color(1, 1, 1), 3.0)
 	draw_circle(tip, 3.0, Color(1, 1, 1))
 	_draw_weapon(height * 0.55, attacking)
+	if cue_left > 0.0:
+		var cue_pos := Vector2(-80.0, -height - 28.0)
+		draw_string(ThemeDB.fallback_font, cue_pos + Vector2(1.0, 2.0), cue_text,
+				HORIZONTAL_ALIGNMENT_CENTER, 160.0, 26, Color(0.0, 0.0, 0.0, 0.95))
+		draw_string(ThemeDB.fallback_font, cue_pos, cue_text,
+				HORIZONTAL_ALIGNMENT_CENTER, 160.0, 26, cue_color)
 
 
 ## Screen-space centre of the shield: raised in front of the body, or carried at its left side.

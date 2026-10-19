@@ -299,6 +299,10 @@ func _draw() -> void:
 	# Ground pass (projected by the iso layer): shadow and the attack wedge, which is the
 	# exact sector the damage test uses.
 	draw_circle(Vector2.ZERO, radius + 3.0, Color(0, 0, 0, 0.3))
+	# Team/elite silhouette: no ambiguity when sprites and telegraphs overlap.
+	var ring_color := Color(1.0, 0.77, 0.22, 0.95) if is_captain() else Color(0.95, 0.25, 0.23, 0.72)
+	draw_arc(Vector2.ZERO, radius + (10.0 if is_captain() else 5.0),
+			0.0, TAU, 40, ring_color, 3.0 if is_captain() else 2.0)
 	if state == State.WINDUP or state == State.ACTIVE:
 		_draw_telegraph()
 
@@ -323,6 +327,9 @@ func _draw() -> void:
 	draw_line(top, tip, Color(1, 1, 1), 3.0)
 	draw_circle(tip, 3.0, Color(1, 1, 1))
 	_draw_weapon(f, height * 0.55)
+	if is_captain():
+		draw_string(ThemeDB.fallback_font, Vector2(-65.0, -height - 51.0), "CAPTAIN",
+				HORIZONTAL_ALIGNMENT_CENTER, 130.0, 21, Color(1.0, 0.85, 0.3))
 	# Health bar above the head.
 	var w := profile.bar_width
 	var bar := Vector2(-w * 0.5, -height - 16.0)
@@ -354,13 +361,13 @@ func _draw_telegraph() -> void:
 	outline.append(poly[0])
 	if state == State.ACTIVE:
 		draw_colored_polygon(poly, Color(1.0, 0.95, 0.9, 0.85))
-		draw_polyline(outline, Color(1, 0.2, 0.1), 3.0)
+		draw_polyline(outline, Color(1, 0.2, 0.1), 4.0)
 		return
 	var p := clampf(state_time / cur.windup, 0.0, 1.0)
 	if locked:
 		# Direction is fixed: solid red, step away to avoid it.
 		draw_colored_polygon(poly, Color(1.0, 0.1, 0.05, 0.35 + 0.3 * p))
-		draw_polyline(outline, Color(1.0, 0.25, 0.1, 0.95), 3.0)
+		draw_polyline(outline, Color(1.0, 0.25, 0.1, 0.95), 4.0)
 	else:
 		draw_colored_polygon(poly, Color(1.0, 0.65, 0.2, 0.12 + 0.18 * p))
 		draw_polyline(outline, Color(1.0, 0.7, 0.3, 0.6), 2.0)
