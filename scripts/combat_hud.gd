@@ -73,6 +73,9 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color(1.0, 0.8, 0.3) if game.captain_alive() else Color.WHITE)
 	draw_string(font, Vector2(right - 260.0, y + h + 24.0), game.loadout_name(),
 			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 20, Color(1, 1, 1, 0.6))
+	var trial := ("SPLIT" if game.split_attacks else "HOLD") + " / " + ("DIR" if game.directional_guard else "360")
+	draw_string(font, Vector2(right - 260.0, y + h + 48.0), trial,
+			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 18, Color(1.0, 0.85, 0.45))
 	if game.intermission_active:
 		var cx := size.x * 0.5
 		draw_string(font, Vector2(cx - 300.0, 210.0), "CAPTAIN INCOMING", HORIZONTAL_ALIGNMENT_CENTER,

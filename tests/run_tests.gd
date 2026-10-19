@@ -147,6 +147,8 @@ func _initialize() -> void:
 	test_captain_vs_guard()
 	test_shield_equipment()
 	test_blocking_player()
+	test_pre_resolution_defense()
+	test_control_and_guard_trials()
 	print("\n%d passed, %d failed" % [passes, fails])
 	quit(fails)
 
@@ -2457,6 +2459,74 @@ func test_heavy_hold_and_menu() -> void:
 	for b in g.menu._weapon_buttons:
 		labels.append(b.text)
 	check("including the Zweihander", "Zweihander" in str(labels), str(labels))
+	g.queue_free()
+
+
+## A pressed defensive action must apply before the enemy's ACTIVE strike resolves.
+func _force_strike_now(g: Game) -> Enemy:
+	var e: Enemy = g.enemies[0]
+	e.state = Enemy.State.ACTIVE
+	e.state_time = 0.0
+	e.cur = e.profile.attacks[0]
+	e.position = g.hero.position + Vector2(0.0, -40.0)
+	e.attack_origin = e.position
+	e.attack_dir = Vector2.DOWN
+	e.hit_done = false
+	return e
+
+
+func test_pre_resolution_defense() -> void:
+	section("Frame-edge defensive input")
+	var g := make_game()
+	g.start_fight(Game.Mode.ONE)
+	_force_strike_now(g)
+	g.input.press_dodge()
+	g.step(1.0 / 60.0)
+	check("same-frame dodge protects before enemy hit", g.hero.state == Hero.State.DODGE and is_equal_approx(g.hero.hp, 100.0))
+	g.start_fight(Game.Mode.ONE)
+	_force_strike_now(g)
+	g.input.press_block(false)
+	g.step(1.0 / 60.0)
+	check("same-frame block raises guard before enemy hit", g.hero.state == Hero.State.BLOCK and is_equal_approx(g.hero.hp, 100.0))
+	g.start_fight(Game.Mode.ONE)
+	g.input.press_block(false)
+	g.step(1.0 / 60.0)
+	g.input.release_block(false)
+	_force_strike_now(g)
+	g.step(1.0 / 60.0)
+	check("releasing block before strike cannot phantom block", g.hero.hp < 100.0)
+	g.start_fight(Game.Mode.ONE)
+	_force_strike_now(g)
+	g.step(1.0 / 60.0)
+	check("no defence still takes the strike", g.hero.hp < 100.0)
+	g.queue_free()
+
+
+func test_control_and_guard_trials() -> void:
+	section("0.9 optional control and defence variants")
+	var g := make_game()
+	g.start_fight(Game.Mode.ONE)
+	check("baseline remains all-round and hold", not g.split_attacks and not g.directional_guard and is_equal_approx(g.tuning.block_arc_shield, 360.0) and not g.controls.separate_attacks)
+	g.directional_guard = true
+	g.split_attacks = true
+	g.shield_on = true
+	g.start_fight(Game.Mode.ONE)
+	check("directional defence applies tuned arcs and parry window", is_equal_approx(g.tuning.block_arc_shield, 140.0) and is_equal_approx(g.tuning.block_arc_bare, 110.0) and is_equal_approx(g.hero.parry_window(), 0.30))
+	check("trial shortens block stun and activates split layout", is_equal_approx(g.hero.block_stun_time(), g.hero.weapon.block_stun_time * 0.55) and g.controls.separate_attacks)
+	# In split mode, tapping LIGHT must strike on press, without awaiting touch-up.
+	g.controls._touch_down(7, g.controls.attack_center)
+	g.step(1.0 / 60.0)
+	check("split light starts immediately on down", g.hero.state == Hero.State.WINDUP and not g.hero.cur_attack.heavy)
+	g.controls._touch_up(7)
+	g.start_fight(Game.Mode.ONE)
+	g.controls._touch_down(8, g.controls.heavy_center)
+	g.step(1.0 / 60.0)
+	check("split heavy starts immediately on down", g.hero.state == Hero.State.WINDUP and g.hero.cur_attack.heavy)
+	g.controls._touch_up(8)
+	g.directional_guard = false
+	g.split_attacks = false
+	g.start_fight(Game.Mode.ONE)
+	check("retry with defaults restores original defence and layout", is_equal_approx(g.tuning.block_arc_shield, 360.0) and is_equal_approx(g.tuning.parry_window_shield, 0.40) and is_equal_approx(g.hero.block_stun_mult, 1.0) and not g.controls.separate_attacks)
 	g.queue_free()
 
 

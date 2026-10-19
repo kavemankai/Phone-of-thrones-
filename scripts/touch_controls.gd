@@ -9,11 +9,14 @@ const CANCEL_MARGIN := 46.0
 const ATTACK_R := 84.0
 const DODGE_R := 62.0
 const BLOCK_R := 52.0
+const HEAVY_R := 48.0
 
 var input: CombatInput
 var hero: Hero
 var tuning: Tuning
 var enabled := false
+## Trial layout: separate instant light and heavy buttons instead of tap/hold.
+var separate_attacks := false
 
 var band := Rect2()
 var joy_zone := Rect2()
@@ -21,11 +24,13 @@ var joy_hint := Vector2()
 var attack_center := Vector2()
 var dodge_center := Vector2()
 var block_center := Vector2()
+var heavy_center := Vector2()
 
 var joy_index := -1
 var atk_index := -1
 var dodge_index := -1
 var block_index := -1
+var heavy_index := -1
 var joy_origin := Vector2()
 
 
@@ -43,6 +48,7 @@ func layout(vp: Vector2, band_h: float, insets: Vector4) -> void:
 	attack_center = Vector2(right - 118.0, bottom - 118.0)
 	dodge_center = Vector2(right - 118.0 - 175.0, bottom - 118.0 - 70.0)
 	block_center = Vector2(right - 118.0, bottom - 282.0)
+	heavy_center = Vector2(right - 293.0, bottom - 300.0)
 	joy_zone = Rect2(insets.x, band.position.y, vp.x * 0.5 - insets.x, band_h)
 	joy_hint = Vector2(vp.x * 0.22, bottom - 150.0)
 	queue_redraw()
@@ -59,6 +65,7 @@ func reset() -> void:
 	atk_index = -1
 	dodge_index = -1
 	block_index = -1
+	heavy_index = -1
 	if input != null:
 		input.clear()
 	queue_redraw()
@@ -86,12 +93,18 @@ func _touch_down(index: int, p: Vector2) -> void:
 	if atk_index == -1 and p.distance_to(attack_center) <= ATTACK_R + FORGIVE:
 		atk_index = index
 		input.press_attack(true)
+		if separate_attacks:
+			# The light swing starts this very simulation step; no release delay.
+			input.release_attack(true)
 	elif dodge_index == -1 and p.distance_to(dodge_center) <= DODGE_R + FORGIVE:
 		dodge_index = index
 		input.press_dodge()
 	elif block_index == -1 and p.distance_to(block_center) <= BLOCK_R + FORGIVE:
 		block_index = index
 		input.press_block(true)
+	elif separate_attacks and heavy_index == -1 and p.distance_to(heavy_center) <= HEAVY_R + FORGIVE:
+		heavy_index = index
+		input.press_heavy()
 	elif joy_index == -1 and joy_zone.has_point(p):
 		joy_index = index
 		joy_origin = p
@@ -107,6 +120,8 @@ func _touch_up(index: int) -> void:
 	elif index == block_index:
 		block_index = -1
 		input.release_block(true)
+	elif index == heavy_index:
+		heavy_index = -1
 	elif index == joy_index:
 		joy_index = -1
 		input.touch_move = Vector2.ZERO
@@ -174,10 +189,10 @@ func _draw() -> void:
 	draw_line(attack_center + Vector2(26, -30), attack_center + Vector2(-26, 22), Color.WHITE, 6.0)
 	draw_line(attack_center + Vector2(-34, 12), attack_center + Vector2(-14, 32), Color.WHITE, 5.0)
 	draw_line(attack_center + Vector2(34, 12), attack_center + Vector2(14, 32), Color.WHITE, 5.0)
-	var label := "HEAVY!" if ready else "ATTACK"
+	var label := "LIGHT" if separate_attacks else ("HEAVY!" if ready else "ATTACK")
 	draw_string(font, attack_center + Vector2(-ATTACK_R, ATTACK_R * 0.62), label,
 			HORIZONTAL_ALIGNMENT_CENTER, ATTACK_R * 2.0, 22, Color.WHITE)
-	if hero != null and hero.state == Hero.State.CHARGING:
+	if not separate_attacks and hero != null and hero.state == Hero.State.CHARGING:
 		var p := hero.charge_progress()
 		draw_arc(attack_center, ATTACK_R + 10.0, -PI * 0.5, -PI * 0.5 + TAU * p, 48,
 				Color(1.0, 0.85, 0.2) if ready else Color.WHITE, 8.0)
@@ -208,6 +223,20 @@ func _draw() -> void:
 			else:
 				draw_arc(c, 6.0, 0.0, TAU, 16, Color(0.7, 0.9, 1.0, 0.6), 2.0)
 	_draw_block_button(font)
+	if separate_attacks:
+		_draw_heavy_button(font)
+
+
+func _draw_heavy_button(font: Font) -> void:
+	var c := heavy_center
+	var r := HEAVY_R
+	var held := heavy_index != -1
+	draw_circle(c, r, Color(0.95, 0.62, 0.18, 0.85 if held else 0.65))
+	draw_arc(c, r, 0.0, TAU, 40, Color.WHITE, 3.0)
+	draw_string(font, c + Vector2(-r, 8.0), "H", HORIZONTAL_ALIGNMENT_CENTER,
+			r * 2.0, 38, Color.WHITE)
+	draw_string(font, c + Vector2(-r, r + 23.0), "HEAVY",
+			HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 18, Color.WHITE)
 
 
 func _draw_block_button(font: Font) -> void:
