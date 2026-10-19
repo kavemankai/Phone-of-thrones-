@@ -27,6 +27,10 @@ extends Resource
 @export var heavy_stagger_time := 1.0
 ## How long this weapon's block recoils an attacker. A hit does not end it.
 @export var block_stun_time := 1.2
+## Above 0, the hero keeps walking through the whole attack (charge, wind-up, strike and
+## recovery) at this fraction of walking speed, with facing locked during wind-up and strike.
+## 0 uses the standard rules: rooted in wind-up and strike, half speed while charging and recovering.
+@export var attack_move_mult := 0.0
 ## A parry with this weapon kills the attacker (or takes EnemyProfile.execute_fraction of its HP).
 @export var parry_kill := false
 

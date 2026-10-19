@@ -60,7 +60,7 @@ func _daggers() -> Weapon:
 	var w := Weapon.new()
 	w.id = "daggers"
 	w.display_name = "Daggers"
-	w.description = "Speed. A fast ring of short stabs that hits all around. Parrying kills. Faster walking, three dodges."
+	w.description = "Speed. A fast ring of short stabs that hits all around, and you keep moving while you attack. Parrying kills. Faster walking, three dodges."
 	w.light = AttackDef.make("Stab", 5.0, 40.0, 360.0, 0.04, 0.05, 0.09)
 	w.heavy = AttackDef.make("Whirl", 12.0, 50.0, 360.0, 0.08, 0.07, 0.18)
 	w.move_mult = 1.1
@@ -74,6 +74,7 @@ func _daggers() -> Weapon:
 	w.heavy_stagger_time = 0.6
 	w.block_stun_time = 0.8
 	w.parry_kill = true
+	w.attack_move_mult = 0.7
 	w.color = Color(0.8, 0.95, 1.0)
 	return w
 

@@ -128,6 +128,24 @@ func _initialize() -> void:
 		dn += 1
 	await _frames(2)
 	await _shot("05b_daggers_light_ring")
+	# Daggers swinging while the stick is held (they keep walking through the attack).
+	game.start_fight(Game.Mode.ONE, 3)
+	game.hero.position = Vector2(mid - 60, 320)
+	game.enemies[0].position = Vector2(mid + 40, 300)
+	game.enemies[0].hp = 9999.0
+	game.enemies[0].cooldown = 1000.0
+	game.input.key_move = Vector2(1, 0)
+	await _advance(0.3)
+	game.input.press_attack(false)
+	game.step(1.0 / 120.0)
+	game.input.release_attack(false)
+	var mn := 0
+	while game.hero.state != Hero.State.ACTIVE and mn < 240:
+		game.step(1.0 / 240.0)
+		mn += 1
+	await _frames(2)
+	await _shot("05c_daggers_attack_on_the_move")
+	game.input.key_move = Vector2.ZERO
 	game.start_fight(Game.Mode.ONE, 3)
 	game.hero.position = Vector2(mid, 320)
 	game.enemies[0].position = Vector2(mid, 290)

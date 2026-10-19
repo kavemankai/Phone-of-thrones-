@@ -198,12 +198,14 @@ func step(dt: float, enemies: Array) -> void:
 		State.CHARGING:
 			_step_charging(dt)
 		State.WINDUP:
+			_move(dt, _attack_move(), false)
 			if state_time >= cur_attack.windup:
 				_enter(State.ACTIVE)
 				hit_ids = {}
 				swung.emit(cur_attack.heavy)
 				_apply_hits()
 		State.ACTIVE:
+			_move(dt, _attack_move(), false)
 			var lunge: float = cur_attack.get("lunge", 0.0)
 			if lunge > 0.0:
 				position = _clamp_to_arena(position + facing * (lunge / cur_attack.active) * dt)
@@ -211,7 +213,7 @@ func step(dt: float, enemies: Array) -> void:
 			if state_time >= cur_attack.active:
 				_enter(State.RECOVER)
 		State.RECOVER:
-			_move(dt, tuning.half_speed_mult)
+			_move(dt, _slow_move())
 			if input.dodge_pressed and _try_dodge():
 				return
 			if state_time >= cur_attack.recover:
@@ -320,14 +322,16 @@ func take_hit(damage: float) -> bool:
 func _enter(s: State) -> void:
 	state = s
 	state_time = 0.0
-	if s == State.WINDUP or s == State.ACTIVE or s == State.DODGE or s == State.HURT \
-			or s == State.GUARD_BREAK or s == State.DEAD:
+	var rooted := s == State.DODGE or s == State.HURT or s == State.GUARD_BREAK or s == State.DEAD
+	if (s == State.WINDUP or s == State.ACTIVE) and weapon.attack_move_mult <= 0.0:
+		rooted = true
+	if rooted:
 		velocity = Vector2.ZERO
 
 
 func _step_charging(dt: float) -> void:
 	charge_time += dt
-	_move(dt, tuning.half_speed_mult)
+	_move(dt, _slow_move())
 	if input.dodge_pressed and _try_dodge():
 		return
 	if input.block_down() and block_cd <= 0.0:
@@ -418,12 +422,22 @@ func _recharge_dodge(dt: float) -> void:
 		dodge_recharge_t = maxf(0.0, dodge_recharge_t - recharge_time())
 
 
-func _move(dt: float, mult: float) -> void:
+## Speed fraction while winding up or striking: 0 (rooted) unless the weapon moves while attacking.
+func _attack_move() -> float:
+	return weapon.attack_move_mult
+
+
+## Speed fraction while charging and recovering.
+func _slow_move() -> float:
+	return weapon.attack_move_mult if weapon.attack_move_mult > 0.0 else tuning.half_speed_mult
+
+
+func _move(dt: float, mult: float, turn := true) -> void:
 	var v := input.move_vector()
 	var target := v * move_speed() * mult
 	var ramp := tuning.move_ramp_up if target.length_squared() >= velocity.length_squared() else tuning.move_ramp_down
 	velocity = velocity.move_toward(target, move_speed() / maxf(ramp, 0.001) * dt)
-	if v.length() > 0.001:
+	if turn and v.length() > 0.001:
 		facing = v.normalized()
 	if velocity.length_squared() > 0.000001:
 		position = _clamp_to_arena(position + velocity * dt)

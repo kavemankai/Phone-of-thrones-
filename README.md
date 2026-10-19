@@ -31,7 +31,7 @@ First open or a fresh clone needs one import pass so the editor learns the class
 
 Sliding your finger off the ATTACK button cancels the attack. Dodge cancels a charge without attacking. Losing focus (phone call, app switch) releases every held input.
 
-You walk at 195 per second with a short ramp (0.12 s to full speed, 0.08 s to stop); you stand still while winding up, striking or dodging. You have 100 HP and two dodge charges (one comes back every 1.4 s). The dodge is invulnerable for its first 0.16 s only. Enemies show an orange wedge while they wind up; it turns solid red when the direction locks (last 0.25 s). Step out of the wedge or dodge through the strike.
+You walk at 195 per second with a short ramp (0.12 s to full speed, 0.08 s to stop); you stand still while winding up, striking or dodging, except with the Daggers, which keep moving through their attacks at 0.7x walking speed (about 150 per second). You have 100 HP and two dodge charges (one comes back every 1.4 s). The dodge is invulnerable for its first 0.16 s only. Enemies show an orange wedge while they wind up; it turns solid red when the direction locks (last 0.25 s). Step out of the wedge or dodge through the strike.
 
 ## Weapons
 
@@ -42,7 +42,7 @@ Pick one on the start screen. It stays for the whole fight and across Retry. Tap
 | Sword | 10 dmg, reach 75, 90 degrees | 25 dmg, reach 95, 140 degrees, pushes 35 | The brief's table, with reach lengthened from 65 / 85 after phone play; baseline |
 | Spear | 10 dmg, reach 95, 30 degrees | 22 dmg, reach 120, 24 degrees, steps 35 forward | Reach and spacing; narrow arcs |
 | Axe | 16 dmg, reach 70, 150 degrees, slower swing | 38 dmg, reach 90, 200 degrees, pushes 60, slowest | Walks at 0.9x, dodge charges return 1.2x slower |
-| Daggers | 5 dmg, reach 40, full 360 degree ring, 0.18 s per swing | 12 dmg, reach 50, 360 degrees | Walks at 1.1x, 3 dodge charges, 0.8x recharge time; a parry kills a grunt |
+| Daggers | 5 dmg, reach 40, full 360 degree ring, 0.18 s per swing | 12 dmg, reach 50, 360 degrees | Walks at 1.1x, 3 dodge charges, 0.8x recharge time; keeps moving at 0.7x speed through every attack (others stand still in wind-up and strike, and creep at half speed in recovery); a parry kills a grunt |
 | Zweihander | 14 dmg, reach 85, 100 degrees, 0.58 s per swing | 34 dmg, reach 105, 160 degrees, pushes 45, 0.9 s per swing | Two-handed, walks at 0.95x, dodge charges return 1.1x slower |
 
 ## Block, shield and parry
@@ -134,6 +134,7 @@ Values you are most likely to touch:
 | --- | --- |
 | Tap/hold feels laggy or heavies fire by accident | `heavy_hold_time` |
 | Movement too floaty or too snappy | `hero_speed`, `move_ramp_up`, `move_ramp_down` |
+| Daggers too slippery or too stiff while attacking | the daggers' `attack_move_mult` (0 = rooted like the rest) |
 | Block stun too strong or too weak | `block_stun_time` (sword), the weapon's `block_stun_time` |
 | Enemies too fast or too slow to read | `enemy_speed`, `enemy_windup` |
 | Three enemies feel chaotic | `max_commits`, `enemy_stagger`, `enemy_attack_gap`, `enemy_hover_range` |
@@ -245,7 +246,7 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - **The captain's heal and dodge refill come at the start of the breather**, so you see the health jump before it appears.
 - **Godot's default touch-to-mouse emulation stays on**, because the Start/Retry buttons need it. The on-screen controls only read touch events, so they are unaffected.
 
-- **Departures from the brief's numbers, after phone play**: sword reach 65 / 85 became 75 / 95, hero speed 180 became 195 with a ramp, and the heavy hold 0.35 s became 0.20 s. Heavy staggers and the block stun are the other additions that shift the brief's balance.
+- **Departures from the brief's numbers, after phone play**: sword reach 65 / 85 became 75 / 95, hero speed 180 became 195 with a ramp, and the heavy hold 0.35 s became 0.20 s. The Daggers' move-while-attacking rule (a weapon stat, `attack_move_mult`) is also new. Heavy staggers and the block stun are the other additions that shift the brief's balance.
 - **Heavy hold at 0.20 s** risks accidental heavies on slow taps, and heavies are strong. If that happens the next step is a separate HEAVY button, not a longer hold.
 - **Defence is now very strong**: all-round guard, a 0.40 s parry window, a stun on every block and a dagger parry kill. A scripted blocking bot now parries nearly everything. If a person can turtle through a fight, narrow the parry window or shorten the block stun first.
 

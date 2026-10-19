@@ -1,11 +1,11 @@
 # Test report
 
-Build under test: version 0.7.0 (changes from the first phone playtest: more forgiving parry, 0.20 s heavy hold, block mini stun, longer sword and a Zweihander, daggers ring and parry kill, faster movement with a ramp), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
+Build under test: version 0.8.0 (0.7.0 plus daggers that keep moving while they attack; 0.7.0 was the first-playtest fixes: forgiving parry, 0.20 s heavy hold, block mini stun, longer sword, Zweihander, daggers ring and parry kill, faster movement with a ramp), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
 Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audio device).
 
 ## Read this first
 
-**I did not test on an Android device.** You played v0.6.0 on your phone and said what was on it works; that is the only phone evidence there is, and v0.7.0 has not been played. Every result below comes from a desktop, either headless or under a virtual display with software OpenGL. I did not feel the controls, I did not see 60 fps on a phone, and I did not judge readability on a real screen. Do not read "passed" as "good on a phone". Section 4 is the checklist for you.
+**I did not test on an Android device.** You played v0.6.0 and said what was on it works, then played v0.7.0 and said it improved and asked for the daggers to move while attacking; that is the only phone evidence there is, and v0.8.0 has not been played. Every result below comes from a desktop, either headless or under a virtual display with software OpenGL. I did not feel the controls, I did not see 60 fps on a phone, and I did not judge readability on a real screen. Do not read "passed" as "good on a phone". Section 4 is the checklist for you.
 
 ## 1. Build and import checks (desktop, headless)
 
@@ -15,7 +15,7 @@ Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audi
 | Every script parses | `godot --headless --path . --check-only --script res://<file>` for each file in `scripts/`, `tests/`, `tools/` | No errors (20 files) |
 | Main scene boots | `godot --headless --path . --quit-after 300` | Ran 300 frames, no output, no errors |
 
-## 2. Logic tests (desktop, headless): 424 checks, 0 failed
+## 2. Logic tests (desktop, headless): 450 checks, 0 failed
 
 Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly during development; results are deterministic. Time is stepped by hand with fixed sub-steps, so there is no timing flake.
 
@@ -51,6 +51,7 @@ Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly
 | Block mini stun | 10 | A blocked grunt is staggered for exactly 1.2 s and its slot is released; a hit on it does ordinary damage (no x2.0) and does not end the stun; wakes at 1.2 s with the 0.35 s gap; a heavy re-staggers it; the captain's lunge is not stunned; a block that empties the guard gives no stun; blocking combo hit 1 stuns the captain so hit 2 never starts |
 | Daggers | 10 | Both attacks are full rings; light cycle is 0.18 s; each hits a target in 8 directions, behind included; just inside reach hits and just outside misses (40 light, 50 heavy); the ring polygon equals the hit circle; a parry kills a grunt, takes exactly 60 HP off the captain and still freezes it 2.0 s; a sword parry never kills |
 | Movement ramp | 7 | About half speed 0.06 s into a start; 195 at full speed; stops within 0.1 s of release and glides under 10 px; velocity is zero in a wind-up and the hero does not slide; a dodge from full speed still covers about 90 |
+| Daggers move while attacking | 26 | Only the daggers carry `attack_move_mult` (0.7); both attacks keep the hero at 150 px/s through charge, wind-up, strike and recovery; the move is steerable but facing stays locked in wind-up and strike; Sword and Zweihander are still rooted in wind-up and strike and recover at half speed; a daggers swing on the move still lands exactly once; a hit or a dodge still stops the hero |
 | Heavy hold and menu | 4 | A 0.15 s press is light and a 0.25 s press is heavy; the start panel has five weapon buttons including the Zweihander |
 | Heavy hits stagger | 16 | A heavy staggers a grunt for 1.0 s and the captain for 0.5 s, with ordinary damage and knockback; a light hit does not stagger; a heavy staggers both of two enemies in its arc; it cancels a wind-up, releases the slot and the strike never lands; `heavy_stagger_mult = 0` disables it; no stun-lock (heavy inside the 1.0 s window damages but does not stagger, after it does); a heavy on a parry-frozen captain does x2.0 and does not re-stagger it; a parry still works inside the window |
 | Captain vs a guard | 6 | Lunge vs shield: blocked, 44 of 80 guard; lunge vs bare guard: full 22, guard untouched; a parry beats the lunge both ways; bare slash gives 7.2 chip and 27 guard; against a shield, combo hit 1 is blocked (guard 66) and the block stun cancels hit 2 |
@@ -64,7 +65,7 @@ Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly
 
 How the touch tests work: they build `InputEventScreenTouch` and `InputEventScreenDrag` events with different finger indices and feed them to the real `TouchControls` handler. This proves the code tracks fingers separately. It does not prove Android delivers events the same way, or that two thumbs on glass behave.
 
-How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 3.8 s (100 of 100 HP left). Against 3 enemies and the captain with default health it won with every weapon: Sword 13.2 s (28 HP left), Spear 29.6 s (40 left), Axe 12.1 s (58 left), Daggers 17.5 s (38 left), Zweihander 13.8 s (40 left). The bot dodges every locked strike with correct timing, which people will not, so these are lower bounds on difficulty.
+How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 3.8 s (100 of 100 HP left). Against 3 enemies and the captain with default health it won with every weapon: Sword 13.2 s (28 HP left), Spear 29.6 s (40 left), Axe 12.1 s (58 left), Daggers 17.1 s (50 left), Zweihander 13.8 s (40 left). The bot dodges every locked strike with correct timing, which people will not, so these are lower bounds on difficulty.
 
 A second bot raises its guard in the last 0.40 s of a strike that covers it. With a shield and default health, Sword won in 11.9 s with 64 HP left (0 plain blocks, 5 parries, no guard break) and Spear won in 22.9 s with 54 left (0 blocks, 5 parries). The wider window turns almost every bot block into a parry, which is the result to watch: it supports the worry that defence is now too strong, though a bot that never misjudges timing says little about a person. It also means the fight can be much shorter than the 30 to 60 s target.
 
@@ -74,7 +75,7 @@ One bug found by the tests along the way: my first bot left its attack button he
 
 Command: `xvfb-run -a godot --path . --rendering-driver opengl3 --resolution 720x1280 --script tools/capture_screens.gd -- <dir>`
 
-I looked at screenshots of: the five-weapon start panel with the Zweihander selected (the label fits at 118 x 84 px buttons), the Zweihander heavy swing, the daggers' light ring, a blocked grunt with its 1.2 s timer, a dagger parry that killed the grunt (the arena is empty, the parry flash is on the hero), the start panel with the shield toggle on (Sword) and disabled (Axe), the shield raised inside its 360-degree guard ring, the bare-weapon guard, the parry freeze with its 3.0 timer and the same enemy 2 s later, a heavy-hit stagger timer, the captain frozen with its timer, the guard break (empty meter, dazed hero), the BLOCK button with its guard ring while held alongside the stick, the start panel (weapon row, mode row), fight start, a locked grunt wedge, heavy-ready charge, each weapon's heavy swing at its active frame (sword, spear, axe spin, daggers), the captain's lunge, slash, combo hit 1 and combo hit 2 wedges, the "CAPTAIN INCOMING" breather, the touch overlay with the daggers' three dodge pips, and the result panel; plus an earlier fight-start at 810 x 1080 (3:4). Observed: all render and fit at 720 x 1280. Fixes made from the block looks: the raised shield was small and hid behind the body, so it is larger and always drawn in front; the BLOCK label crowded the ATTACK ring, so it moved inside the button. Fixes made from earlier looks: the idle hero showed through the start panel (arena now hidden on the start screen), and an enemy health bar could overflow when HP exceeded max (clamped).
+I looked at screenshots of: the five-weapon start panel with the Zweihander selected (the label fits at 118 x 84 px buttons), the Zweihander heavy swing, the daggers' light ring, the daggers swinging while moving, a blocked grunt with its 1.2 s timer, a dagger parry that killed the grunt (the arena is empty, the parry flash is on the hero), the start panel with the shield toggle on (Sword) and disabled (Axe), the shield raised inside its 360-degree guard ring, the bare-weapon guard, the parry freeze with its 3.0 timer and the same enemy 2 s later, a heavy-hit stagger timer, the captain frozen with its timer, the guard break (empty meter, dazed hero), the BLOCK button with its guard ring while held alongside the stick, the start panel (weapon row, mode row), fight start, a locked grunt wedge, heavy-ready charge, each weapon's heavy swing at its active frame (sword, spear, axe spin, daggers), the captain's lunge, slash, combo hit 1 and combo hit 2 wedges, the "CAPTAIN INCOMING" breather, the touch overlay with the daggers' three dodge pips, and the result panel; plus an earlier fight-start at 810 x 1080 (3:4). Observed: all render and fit at 720 x 1280. Fixes made from the block looks: the raised shield was small and hid behind the body, so it is larger and always drawn in front; the BLOCK label crowded the ATTACK ring, so it moved inside the button. Fixes made from earlier looks: the idle hero showed through the start panel (arena now hidden on the start screen), and an enemy health bar could overflow when HP exceeded max (clamped).
 
 Known visual weaknesses:
 - A 2:1 diamond uses only about half the screen height in portrait, so there is empty space above and below the arena. Characters are roughly 45 px wide on a 720 px screen (about the literal 1:1 size), smaller than the earlier top-down build.
@@ -91,7 +92,7 @@ Not checked: real phone screen size and brightness, notches or rounded corners (
 | --- | --- |
 | Export | `godot --headless --path . --export-debug "Android" build/shieldwall-debug.apk` succeeded |
 | Signature | `apksigner verify`: verifies, v2 and v3 schemes, debug certificate (CN=Android Debug) |
-| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.7.0, versionCode 8, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
+| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.8.0, versionCode 9, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
 | Contents | Compiled scripts and scenes, `tuning.res`, icon; arm64 `libgodot_android.so` |
 
 Final APK SHA-256 is printed at the end of the delivery message and can be recomputed with `sha256sum build/shieldwall-debug.apk`. The APK is not committed to git.
@@ -102,7 +103,7 @@ The APK has never been installed or launched, on a phone or an emulator. An APK 
 
 Install the APK, play both modes for several minutes, and note:
 
-- Device model, Android version, build (0.7.0), and whether it holds 60 fps (30 is the floor).
+- Device model, Android version, build (0.8.0), and whether it holds 60 fps (30 is the floor).
 - Do the stick and an action button work at the same time? Any dropped or stuck touches?
 - Did a tap ever turn into a heavy by accident, or a heavy feel delayed? (The tap/hold split is a hypothesis; if it fails, try separate buttons.)
 - Did you miss dodge presses? Does the dodge button sit where your thumb lands?
@@ -116,6 +117,7 @@ Install the APK, play both modes for several minutes, and note:
 - Block stun: does a blocked enemy recoiling for 1.2 s feel like a reward, or does it make blocking the only sensible move?
 - Weapons: is the Sword at reach 75 / 95 long enough, does it crowd the Spear, and how does the Zweihander feel against it? Do the Daggers' ring and parry kill make them the best weapon?
 - Movement: does 195 with a short ramp feel better than flat 180, or floaty?
+- Daggers: does 0.7x speed while attacking feel right? Too slippery (kiting forever) or still too stiff?
 - Do the sounds play, and are they tolerable? I could not hear them (block clank, parry ping, guard-break thud).
 - Stagger: after a parry, do you take the free hit or reposition? Is 3 s the right length, and is the timer readable at a glance? Do heavies now feel like the only attack worth using?
 - Block: can you reach BLOCK with the right thumb without losing ATTACK or DODGE? Is the parry window (0.40 s with a shield, 0.32 s bare) comfortable on your phone? Do the per-weapon freeze lengths (Sword 3.0, Spear 3.5, Axe 2.5, Daggers 2.0, Zweihander 3.0 s) feel like real differences?

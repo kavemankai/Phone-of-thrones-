@@ -142,6 +142,7 @@ func _initialize() -> void:
 	test_block_stun()
 	test_daggers()
 	test_movement_ramp()
+	test_attack_move()
 	test_heavy_hold_and_menu()
 	test_captain_vs_guard()
 	test_shield_equipment()
@@ -2338,6 +2339,108 @@ func test_movement_ramp() -> void:
 	d.run(0.4, 0.01)
 	check("a dodge still covers 90 px at full speed", absf((dx0 - d.hero.position.x) - 90.0) < 20.0, "d=%s" % (dx0 - d.hero.position.x))
 	d.free_all()
+
+
+## Speed of the hero while it is in `state`, sampled once the state has run for `after` seconds.
+func speed_in_state(r: Rig, state: Hero.State, after: float, limit := 1.5) -> float:
+	var end := r.time + limit
+	while r.time < end:
+		r.tick(0.005)
+		if r.hero.state == state and r.hero.state_time >= after:
+			return r.hero.velocity.length()
+	return -1.0
+
+
+func test_attack_move() -> void:
+	section("Daggers move while they attack (0.7x walking speed)")
+	var dg := load("res://resources/weapons/daggers.tres") as Weapon
+	check("only the daggers have attack_move_mult (0.7)", is_equal_approx(dg.attack_move_mult, 0.7) and is_equal_approx((load("res://resources/weapons/zweihander.tres") as Weapon).attack_move_mult, 0.0) and Weapon.sword_from(T).attack_move_mult == 0.0)
+	var expect := 214.5 * 0.7
+	for heavy in [false, true]:
+		var r := weapon_rig(dg)
+		r.hero.position = Vector2(500, 360)
+		r.input.key_move = Vector2(-1, 0)
+		r.run(0.4, 0.01)
+		r.input.press_attack(false)
+		r.run(0.25 if heavy else 0.08, 0.01)
+		var charge_v := r.hero.velocity.length()
+		check("daggers %s: moving at %.0f while the attack charges" % ["heavy" if heavy else "light", expect], absf(charge_v - expect) < 1.0, "v=%s" % charge_v)
+		r.input.release_attack(false)
+		r.tick(0.005)
+		var face0 := r.hero.facing
+		check("daggers %s: the attack starts with the hero still moving" % ["heavy" if heavy else "light"], r.hero.state == Hero.State.WINDUP and r.hero.velocity.length() > 100.0, "state=%d v=%s" % [r.hero.state, r.hero.velocity.length()])
+		var x0 := r.hero.position.x
+		r.input.key_move = Vector2(0, -1)  # steer while the attack plays
+		var wv := speed_in_state(r, Hero.State.WINDUP, 0.01 if not heavy else 0.07)
+		check("daggers %s: wind-up speed is about %.0f" % ["heavy" if heavy else "light", expect], wv >= 0.0 and wv > 100.0 and wv < 215.0, "v=%s" % wv)
+		check("daggers %s: moved during the wind-up" % ["heavy" if heavy else "light"], r.hero.position.x < x0 - 0.01)
+		check("daggers %s: facing is locked in the wind-up" % ["heavy" if heavy else "light"], r.hero.facing.is_equal_approx(face0), str(r.hero.facing))
+		var av := speed_in_state(r, Hero.State.ACTIVE, 0.0)
+		check("daggers %s: still moving during the strike, facing still locked" % ["heavy" if heavy else "light"], av > 100.0 and r.hero.facing.is_equal_approx(face0), "v=%s" % av)
+		var rv := speed_in_state(r, Hero.State.RECOVER, 0.07)
+		check("daggers %s: moving in recovery, at 0.7x once steered" % ["heavy" if heavy else "light"], rv > 100.0, "v=%s" % rv)
+		r.free_all()
+	# Steady state: the speed settles on 0.7 x 214.5 = 150.
+	var s1 := weapon_rig(dg)
+	s1.hero.position = Vector2(500, 360)
+	s1.input.key_move = Vector2(-1, 0)
+	s1.input.press_attack(false)
+	s1.run(0.15, 0.01)
+	check("daggers charge at 0.7x walking speed", absf(s1.hero.velocity.length() - expect) < 1.0, "v=%s" % s1.hero.velocity.length())
+	s1.free_all()
+	check("150 px/s is above the sword's recovery speed (97.5)", expect > 195.0 * 0.5)
+
+	# Other weapons are unchanged: rooted in wind-up and strike, half speed only in recovery.
+	for w in [Weapon.sword_from(T), load("res://resources/weapons/zweihander.tres") as Weapon]:
+		var r := weapon_rig(w)
+		r.hero.position = Vector2(500, 360)
+		r.input.key_move = Vector2(-1, 0)
+		r.run(0.4, 0.01)
+		r.input.press_attack(false)
+		r.tick(0.005)
+		r.input.release_attack(false)
+		r.tick(0.005)
+		check("%s: wind-up is rooted" % w.display_name, r.hero.state == Hero.State.WINDUP and r.hero.velocity == Vector2.ZERO)
+		var sv := speed_in_state(r, Hero.State.ACTIVE, 0.0)
+		check("%s: the strike is rooted" % w.display_name, sv == 0.0, "v=%s" % sv)
+		var half := speed_in_state(r, Hero.State.RECOVER, w.light.recover - 0.05)
+		check("%s: recovery moves at half speed" % w.display_name, absf(half - 195.0 * w.move_mult * 0.5) < 1.5, "v=%s" % half)
+		r.free_all()
+
+	# The ring still hits while the hero moves, once.
+	var h := weapon_rig(dg)
+	h.hero.position = Vector2(500, 360)
+	var tgt := h.add_enemy(Vector2(440, 360))
+	tgt.hp = 1000.0
+	h.input.key_move = Vector2(-1, 0)
+	h.run(0.2, 0.01)
+	h.input.press_attack(false)
+	h.run(0.05, 0.01)
+	h.input.release_attack(false)
+	h.run(0.5)
+	check("a daggers swing on the move still lands exactly once", h.hits == 1 and h.swings == 1, "hits=%d swings=%d" % [h.hits, h.swings])
+	h.free_all()
+
+	# Dodge and hurt still root the hero.
+	var d := weapon_rig(dg)
+	d.hero.position = Vector2(500, 360)
+	d.input.key_move = Vector2(-1, 0)
+	d.run(0.3, 0.01)
+	d.input.press_attack(false)
+	d.tick(0.005)
+	d.input.release_attack(false)
+	d.until_state(Hero.State.WINDUP)
+	d.hero.take_hit(10.0)
+	check("a hit stops the daggers hero (hurt)", d.hero.state == Hero.State.HURT and d.hero.velocity == Vector2.ZERO)
+	d.free_all()
+	var dd := weapon_rig(dg)
+	dd.hero.position = Vector2(500, 360)
+	dd.input.key_move = Vector2(-1, 0)
+	dd.run(0.3, 0.01)
+	dd.input.press_dodge()
+	dd.tick(0.005)
+	check("a dodge zeroes velocity and takes over", dd.hero.state == Hero.State.DODGE and dd.hero.velocity == Vector2.ZERO)
+	dd.free_all()
 
 
 func test_heavy_hold_and_menu() -> void:
