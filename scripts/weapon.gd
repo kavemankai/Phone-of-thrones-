@@ -21,6 +21,10 @@ extends Resource
 @export var dual := false
 ## Two-handed weapons cannot be paired with a shield.
 @export var one_handed := true
+## How long this weapon's parry freezes an attacker, and how long its heavy hit does. A hit on
+## the enemy ends either early. This is the main difference between weapons (and, later, skills).
+@export var parry_stagger_time := 3.0
+@export var heavy_stagger_time := 1.0
 
 
 ## The dictionary shape the hero uses while an attack plays.
@@ -36,6 +40,7 @@ func attack_data(heavy_attack: bool) -> Dictionary:
 		"recover": a.recover,
 		"knockback": a.knockback,
 		"lunge": a.lunge,
+		"stagger": heavy_stagger_time if heavy_attack else 0.0,
 	}
 
 
@@ -48,4 +53,6 @@ static func sword_from(t: Tuning) -> Weapon:
 			t.light_windup, t.light_active, t.light_recover)
 	w.heavy = AttackDef.make("Cleave", t.heavy_damage, t.heavy_reach, t.heavy_arc_deg,
 			t.heavy_windup, t.heavy_active, t.heavy_recover, t.heavy_knockback)
+	w.parry_stagger_time = t.parry_stagger_time
+	w.heavy_stagger_time = t.heavy_stagger_time
 	return w

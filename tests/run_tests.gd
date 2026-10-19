@@ -137,6 +137,8 @@ func _initialize() -> void:
 	test_stagger_freeze_and_wake()
 	test_frozen_not_pushed()
 	test_heavy_stagger()
+	test_weapon_stagger_lengths()
+	test_parry_timing_sweep()
 	test_captain_vs_guard()
 	test_shield_equipment()
 	test_blocking_player()
@@ -161,6 +163,7 @@ func test_tuning_matches_design() -> void:
 		"enemy_attack_gap": 0.35, "enemy_lock_time": 0.25, "max_commits": 2,
 		"hurt_duration": 0.15, "hit_immunity": 0.35, "aim_cone_deg": 90.0,
 		"half_speed_mult": 0.5, "captain_heal": 30.0, "captain_intro_time": 2.0,
+		"parry_stagger_time": 3.0, "heavy_stagger_time": 1.0, "parry_window_shield": 0.28, "parry_window_bare": 0.20,
 	}
 	for k in expect:
 		if not is_equal_approx(float(T.get(k)), float(expect[k])):
@@ -1031,7 +1034,11 @@ func test_weapon_and_captain_data() -> void:
 	var daggers: Weapon = g.weapons[3]
 	check("daggers light/heavy values", tuple_close(attack_tuple(daggers.light), [6, 45, 80, 0.05, 0.06, 0.12, 0, 0]) and tuple_close(attack_tuple(daggers.heavy), [14, 55, 100, 0.10, 0.08, 0.22, 0, 0]))
 	check("daggers: 1.1x speed, one extra dodge, 0.8x recharge", is_equal_approx(daggers.move_mult, 1.1) and daggers.extra_dodge_charges == 1 and is_equal_approx(daggers.dodge_recharge_mult, 0.8))
+	check("stagger lengths per weapon: sword 3.0/1.0, spear 3.5/0.8, axe 2.5/1.5, daggers 2.0/0.6 (parry/heavy)",
+			tuple_close([sword.parry_stagger_time, sword.heavy_stagger_time, spear.parry_stagger_time, spear.heavy_stagger_time, axe.parry_stagger_time, axe.heavy_stagger_time, daggers.parry_stagger_time, daggers.heavy_stagger_time],
+			[3.0, 1.0, 3.5, 0.8, 2.5, 1.5, 2.0, 0.6]))
 	var cap: EnemyProfile = g.captain_profile
+	check("captain scales stagger: parry x1.0, heavy x0.5", is_equal_approx(cap.stagger_mult, 1.0) and is_equal_approx(cap.heavy_stagger_mult, 0.5))
 	check("captain loaded: 150 HP, radius 22, speed 95", cap != null and cap.id == "captain" and is_equal_approx(cap.max_hp, 150.0) and is_equal_approx(cap.radius, 22.0) and is_equal_approx(cap.speed, 95.0))
 	check("captain has slash, two combo hits and a lunge", cap.attacks.size() == 4 and cap.attacks[1].chain_to == 2 and cap.attacks[2].chain_to == -1)
 	check("captain attack values", tuple_close(attack_tuple(cap.attacks[0]), [18, 62, 120, 0.70, 0.10, 0.60, 0, 0]) and tuple_close(attack_tuple(cap.attacks[1]), [14, 58, 110, 0.55, 0.10, 0.12, 0, 0]) and tuple_close(attack_tuple(cap.attacks[2]), [20, 66, 130, 0.38, 0.10, 0.80, 0, 0]) and tuple_close(attack_tuple(cap.attacks[3]), [22, 150, 28, 0.80, 0.12, 0.90, 0, 120]))
@@ -1658,11 +1665,11 @@ func test_guard_break_and_regen() -> void:
 	h.free_all()
 
 
-func parry_rig(shield: bool, cap: bool, lead: float, behind := false, immune := false) -> Array:
+func parry_rig(shield: bool, cap: bool, lead: float, behind := false, immune := false, w: Weapon = null) -> Array:
 	## Enemy adjacent to the hero (in front, or behind it); the hero raises the guard `lead`
 	## seconds before the strike.
 	var r := Rig.new(root, T, Vector2(320, 360))
-	r.use_weapon(Weapon.sword_from(T), shield)
+	r.use_weapon(w if w != null else Weapon.sword_from(T), shield)
 	r.run_enemies = true
 	var prof: EnemyProfile = (load("res://resources/captain.tres") as EnemyProfile) if cap else null
 	var e := r.add_enemy(Vector2(320, 390) if behind else Vector2(320, 330), 0, prof)
@@ -1692,16 +1699,22 @@ func test_parry() -> void:
 	check("a parry freezes for 3.0 s", is_equal_approx(e1.stagger_total, 3.0) and e1.stagger_left > 2.9)
 	r1.free_all()
 
-	var p2 := parry_rig(true, false, 0.30)
-	check("raising it 0.30 s early is an ordinary block", p2[1].state == Enemy.State.RECOVER and is_equal_approx(p2[0].hero.guard, 68.0) and is_equal_approx(p2[0].hero.hp, 100.0))
+	var p2 := parry_rig(true, false, 0.40)
+	check("raising it 0.40 s early is an ordinary block", p2[1].state == Enemy.State.RECOVER and is_equal_approx(p2[0].hero.guard, 68.0) and is_equal_approx(p2[0].hero.hp, 100.0))
 	p2[0].free_all()
 
-	var p3 := parry_rig(true, false, 0.15)
-	check("0.15 s before the hit still parries with a shield (window 0.18)", p3[1].state == Enemy.State.STAGGER)
+	var p3 := parry_rig(true, false, 0.25)
+	check("0.25 s before the hit parries with a shield (window 0.28)", p3[1].state == Enemy.State.STAGGER)
 	p3[0].free_all()
-	var p4 := parry_rig(false, false, 0.15)
-	check("0.15 s before the hit does not parry bare-handed (window 0.12)", p4[1].state == Enemy.State.RECOVER and is_equal_approx(p4[0].hero.guard, 22.0))
+	var p3b := parry_rig(true, false, 0.35)
+	check("0.35 s before the hit is only a block with a shield", p3b[1].state == Enemy.State.RECOVER)
+	p3b[0].free_all()
+	var p4 := parry_rig(false, false, 0.25)
+	check("0.25 s before the hit does not parry bare-handed (window 0.20)", p4[1].state == Enemy.State.RECOVER and is_equal_approx(p4[0].hero.guard, 22.0))
 	p4[0].free_all()
+	var p4b := parry_rig(false, false, 0.18)
+	check("0.18 s before the hit parries bare-handed", p4b[1].state == Enemy.State.STAGGER)
+	p4b[0].free_all()
 	var p5 := parry_rig(false, false, 0.08)
 	check("0.08 s before the hit parries bare-handed", p5[1].state == Enemy.State.STAGGER and is_equal_approx(p5[0].hero.hp, 100.0) and is_equal_approx(p5[0].hero.guard, 40.0))
 	p5[0].free_all()
@@ -1710,10 +1723,10 @@ func test_parry() -> void:
 	var pb := parry_rig(true, false, 0.10, true)
 	check("a parry works against an attacker behind you", pb[1].state == Enemy.State.STAGGER and is_equal_approx(pb[0].hero.hp, 100.0) and is_equal_approx(pb[0].hero.guard, 80.0))
 	pb[0].free_all()
-	var bb := parry_rig(true, false, 0.30, true)
+	var bb := parry_rig(true, false, 0.40, true)
 	check("a plain block works against an attacker behind you: guard 68, no damage", bb[1].state == Enemy.State.RECOVER and is_equal_approx(bb[0].hero.guard, 68.0) and is_equal_approx(bb[0].hero.hp, 100.0), "guard=%s hp=%s" % [bb[0].hero.guard, bb[0].hero.hp])
 	bb[0].free_all()
-	var bare_behind := parry_rig(false, false, 0.30, true)
+	var bare_behind := parry_rig(false, false, 0.40, true)
 	check("bare-handed, a hit from behind is blocked too: guard 22, 4.8 chip", bare_behind[1].state == Enemy.State.RECOVER and is_equal_approx(bare_behind[0].hero.guard, 22.0) and is_equal_approx(bare_behind[0].hero.hp, 95.2), "guard=%s hp=%s" % [bare_behind[0].hero.guard, bare_behind[0].hero.hp])
 	bare_behind[0].free_all()
 
@@ -1815,9 +1828,9 @@ func test_shield_equipment() -> void:
 	var daggers: Weapon = g.weapons[3]
 	check("sword and spear are one-handed, axe and daggers are not", sword.one_handed and spear.one_handed and not axe.one_handed and not daggers.one_handed)
 	g.hero.equip(sword, true)
-	check("shield with the sword: arc 360, guard 80, window 0.18", g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 80.0) and is_equal_approx(g.hero.parry_window(), 0.18))
+	check("shield with the sword: arc 360, guard 80, window 0.28", g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 80.0) and is_equal_approx(g.hero.parry_window(), 0.28))
 	g.hero.equip(axe, true)
-	check("shield with the axe is ignored: arc 360, guard 40, window 0.12", not g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 40.0) and is_equal_approx(g.hero.parry_window(), 0.12))
+	check("shield with the axe is ignored: arc 360, guard 40, window 0.20", not g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 360.0) and is_equal_approx(g.hero.guard_max(), 40.0) and is_equal_approx(g.hero.parry_window(), 0.20))
 
 	g.menu.set_weapon(0)
 	g.menu.set_shield(true)
@@ -1987,7 +2000,7 @@ func test_heavy_stagger() -> void:
 	while winder.state_time < 0.4:
 		wr.tick(0.005)
 	check("the grunt holds a commitment mid wind-up", wr.ctrl.count() == 1)
-	winder.take_hit(25.0, wr.hero.position, 35.0, true)
+	winder.take_hit(25.0, wr.hero.position, 35.0, 1.0)
 	check("a heavy hit cancels the wind-up and releases the slot", winder.state == Enemy.State.STAGGER and wr.ctrl.count() == 0)
 	wr.hero.position = Vector2(320, 360)  # knockback moved it; stand right beside it again
 	winder.position = Vector2(320, 330)
@@ -1998,18 +2011,18 @@ func test_heavy_stagger() -> void:
 	# The captain is staggered more briefly.
 	var cr := Rig.new(root, T, Vector2(320, 500))
 	var cap := cr.add_enemy(Vector2(320, 300), 0, load("res://resources/captain.tres") as EnemyProfile)
-	cap.take_hit(25.0, cr.hero.position, 35.0, true)
+	cap.take_hit(25.0, cr.hero.position, 35.0, 1.0)
 	check("a heavy hit staggers the captain for 0.5 s", cap.state == Enemy.State.STAGGER and is_equal_approx(cap.stagger_total, 0.5))
 	cr.free_all()
 
 	# A profile with no heavy stagger is never staggered by a heavy.
 	var rr := Rig.new(root, T, Vector2(320, 500))
 	var none_profile := EnemyProfile.grunt_from(T)
-	none_profile.heavy_stagger_time = 0.0
+	none_profile.heavy_stagger_mult = 0.0
 	var tough := rr.add_enemy(Vector2(320, 300), 0, none_profile)
 	tough.hp = 1000.0
-	tough.take_hit(25.0, rr.hero.position, 35.0, true)
-	check("heavy_stagger_time = 0 turns the heavy stagger off", tough.state != Enemy.State.STAGGER)
+	tough.take_hit(25.0, rr.hero.position, 35.0, 1.0)
+	check("heavy_stagger_mult = 0 turns the heavy stagger off", tough.state != Enemy.State.STAGGER)
 	rr.free_all()
 
 	# No stun-lock.
@@ -2018,14 +2031,14 @@ func test_heavy_stagger() -> void:
 	var ie := ir.add_enemy(Vector2(320, 150))
 	ie.hp = 1000.0
 	ie.cooldown = 1000.0
-	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	ie.take_hit(25.0, ir.hero.position, 0.0, 1.0)
 	check("first heavy: staggered", ie.state == Enemy.State.STAGGER)
 	ir.run(1.05)
 	check("it wakes after 1.0 s and cannot be heavy-staggered for 1.0 s", ie.state != Enemy.State.STAGGER and ie.stagger_immune > 0.9)
-	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	ie.take_hit(25.0, ir.hero.position, 0.0, 1.0)
 	check("a heavy inside the window damages but does not stagger", ie.state != Enemy.State.STAGGER and is_equal_approx(ie.hp, 950.0))
 	ir.run(1.0)
-	ie.take_hit(25.0, ir.hero.position, 0.0, true)
+	ie.take_hit(25.0, ir.hero.position, 0.0, 1.0)
 	check("a heavy after the window staggers again", ie.state == Enemy.State.STAGGER)
 	ir.free_all()
 
@@ -2034,7 +2047,7 @@ func test_heavy_stagger() -> void:
 	var pe: Enemy = pr[1]
 	pr[0].run(0.5)
 	var before := pe.hp
-	pe.take_hit(25.0, pr[0].hero.position, 35.0, true)
+	pe.take_hit(25.0, pr[0].hero.position, 35.0, 1.0)
 	check("a heavy on a parry-frozen captain does x2.0 (50)", is_equal_approx(before - pe.hp, 50.0), "dmg=%s" % (before - pe.hp))
 	check("and does not stagger it again", pe.state == Enemy.State.POSITION)
 	pr[0].free_all()
@@ -2043,3 +2056,86 @@ func test_heavy_stagger() -> void:
 	var im := parry_rig(true, false, 0.10, false, true)
 	check("a parry still works on an enemy inside the immunity window", im[1].state == Enemy.State.STAGGER and is_equal_approx(im[1].stagger_total, 3.0))
 	im[0].free_all()
+
+
+func test_weapon_stagger_lengths() -> void:
+	section("The stagger timer differs by weapon")
+	var list: Array[Weapon] = [Weapon.sword_from(T), load("res://resources/weapons/spear.tres") as Weapon,
+			load("res://resources/weapons/axe.tres") as Weapon, load("res://resources/weapons/daggers.tres") as Weapon]
+	var parry_expect := [3.0, 3.5, 2.5, 2.0]
+	var heavy_expect := [1.0, 0.8, 1.5, 0.6]
+	for i in list.size():
+		var w: Weapon = list[i]
+		# Parry: shield for the one-handed weapons, bare-handed for the others; raised 0.08 s early.
+		var p := parry_rig(w.one_handed, false, 0.08, false, false, w)
+		check("%s parry freezes a grunt for %.1f s" % [w.display_name, parry_expect[i]], p[1].state == Enemy.State.STAGGER and is_equal_approx(p[1].stagger_total, parry_expect[i]), "total=%s" % p[1].stagger_total)
+		p[0].free_all()
+		var c := parry_rig(w.one_handed, true, 0.08, false, false, w)
+		check("%s parry freezes the captain for %.1f s too" % [w.display_name, parry_expect[i]], c[1].state == Enemy.State.STAGGER and is_equal_approx(c[1].stagger_total, parry_expect[i]))
+		c[0].free_all()
+		var h := heavy_hit(w)
+		check("%s heavy staggers a grunt for %.1f s" % [w.display_name, heavy_expect[i]], h.enemies[0].state == Enemy.State.STAGGER and is_equal_approx(h.enemies[0].stagger_total, heavy_expect[i]), "state=%d total=%s" % [h.enemies[0].state, h.enemies[0].stagger_total])
+		h.free_all()
+		var light := Rig.new(root, T)
+		light.use_weapon(w)
+		var lt := light.add_enemy(light.hero.position + Vector2(0, -w.light.reach * 0.6))
+		lt.hp = 1000.0
+		light.input.press_attack(false)
+		light.tick(0.005)
+		light.input.release_attack(false)
+		light.run(1.0)
+		check("%s light hit never staggers" % w.display_name, lt.state != Enemy.State.STAGGER and lt.hp < 1000.0)
+		light.free_all()
+	# The captain halves heavy staggers, whichever weapon caused them.
+	var cr := Rig.new(root, T, Vector2(320, 500))
+	var captain := cr.add_enemy(Vector2(320, 300), 0, load("res://resources/captain.tres") as EnemyProfile)
+	captain.take_hit(25.0, cr.hero.position, 0.0, list[2].heavy_stagger_time)
+	check("an axe heavy staggers the captain for 0.75 s (1.5 x 0.5)", captain.state == Enemy.State.STAGGER and is_equal_approx(captain.stagger_total, 0.75))
+	cr.free_all()
+
+
+func test_parry_timing_sweep() -> void:
+	section("Parry timing sweep: raise the guard 0.02 to 0.60 s before a grunt's strike")
+	for shield in [true, false]:
+		var window := T.parry_window_shield if shield else T.parry_window_bare
+		var parried := []
+		var blocked := []
+		var hit := []
+		var lead := 0.02
+		while lead <= 0.60 + 0.0001:
+			var p := parry_rig(shield, false, lead)
+			var e: Enemy = p[1]
+			var r: Rig = p[0]
+			if e.state == Enemy.State.STAGGER:
+				parried.append(lead)
+			elif r.hero.hp < 100.0 - 0.001 and r.hurts > 0:
+				hit.append(lead)
+			else:
+				blocked.append(lead)
+			r.free_all()
+			lead += 0.02
+		var name := "shield" if shield else "bare"
+		var lo_p: float = parried.min() if parried.size() > 0 else -1.0
+		var hi_p: float = parried.max() if parried.size() > 0 else -1.0
+		print("        (%s: parried at %.2f to %.2f s early, blocked beyond, %d of 30 timings took a hit)" % [name, lo_p, hi_p, hit.size()])
+		check("%s: every timing from 0.04 s to just inside the window (%.2f s) is a parry" % [name, window - 0.02],
+				_all_in(parried, 0.04, window - 0.02), str(parried))
+		check("%s: every timing from just past the window to 0.60 s is a plain block, never a hit" % name,
+				_all_in(blocked, window + 0.02, 0.60) and hit.is_empty(), "hit=%s" % str(hit))
+		check("%s: the parry band is wide enough to hit by reaction (%d timings, 0.02 s apart)" % [name, parried.size()],
+				parried.size() >= int(window / 0.02) - 2)
+
+
+func _all_in(values: Array, lo: float, hi: float) -> bool:
+	## True when every 0.02 s step between lo and hi is present in the list.
+	var t := ceilf(lo / 0.02) * 0.02
+	while t <= hi + 0.0001:
+		var found := false
+		for v in values:
+			if absf(v - t) < 0.005:
+				found = true
+				break
+		if not found:
+			return false
+		t += 0.02
+	return true

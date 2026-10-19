@@ -108,10 +108,15 @@ extends Resource
 @export var guard_break_time: float = 0.8
 @export var guard_break_refill: float = 0.5
 ## A hit this soon after raising the guard is a parry: no damage, no guard cost, attacker staggered.
-@export var parry_window_shield: float = 0.18
-@export var parry_window_bare: float = 0.12
+## Generous on purpose: touch latency alone can eat 50 to 100 ms.
+@export var parry_window_shield: float = 0.28
+@export var parry_window_bare: float = 0.20
 ## After lowering the guard it cannot be raised again for this long.
 @export var block_reraise_delay: float = 0.35
+## Stagger lengths for the sword (the baseline weapon). Every other weapon has its own in its
+## .tres, and enemies scale them (EnemyProfile.stagger_mult / heavy_stagger_mult).
+@export var parry_stagger_time: float = 3.0
+@export var heavy_stagger_time: float = 1.0
 ## Damage multiplier for the hit that wakes a staggered enemy.
 @export var stagger_damage_mult: float = 2.0
 ## After a stagger ends an enemy cannot be heavy-staggered again for this long (no stun-lock).
@@ -137,6 +142,7 @@ func attack_data(heavy: bool) -> Dictionary:
 			"recover": heavy_recover,
 			"knockback": heavy_knockback,
 			"lunge": 0.0,
+			"stagger": heavy_stagger_time,
 		}
 	return {
 		"heavy": false,
@@ -148,6 +154,7 @@ func attack_data(heavy: bool) -> Dictionary:
 		"recover": light_recover,
 		"knockback": 0.0,
 		"lunge": 0.0,
+		"stagger": 0.0,
 	}
 
 

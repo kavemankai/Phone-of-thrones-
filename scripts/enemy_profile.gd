@@ -14,10 +14,10 @@ extends Resource
 ## Drawing only: a gold cap marks the captain. Alpha 0 means no cap.
 @export var cap_color := Color(0, 0, 0, 0)
 @export var bar_width := 36.0
-## How long a parry freezes this enemy (a hit ends it sooner).
-@export var stagger_time := 3.0
-## How long a heavy hit freezes it. 0 means heavy hits never stagger this enemy.
-@export var heavy_stagger_time := 1.0
+## Scales the hero weapon's stagger lengths for this enemy: a parry freeze, and a heavy-hit
+## freeze. 0 on the heavy one means heavy hits never stagger it.
+@export var stagger_mult := 1.0
+@export var heavy_stagger_mult := 1.0
 @export var attacks: Array[AttackDef] = []
 ## Attack indices used in order, repeating. An entry is skipped when the hero is closer
 ## than that attack's min_range.

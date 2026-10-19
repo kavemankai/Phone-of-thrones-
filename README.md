@@ -54,7 +54,7 @@ Hold BLOCK to raise a guard. By default it covers **every direction** (360 degre
 | Damage that gets through a block | none | 40% |
 | Guard meter | 80 | 40 |
 | Guard lost per blocked point of damage | 1.0 | 1.5 |
-| Parry window | 0.18 s | 0.12 s |
+| Parry window | 0.28 s | 0.20 s |
 
 - **Shield**: a toggle on the start screen, for the one-handed weapons (Sword, Spear). Axe and Daggers are two-handed, so the toggle is disabled for them and they use the bare guard. Carrying a shield costs 5% walking speed.
 - **Raising the guard** works from idle, and cancels a charge. It is refused during a swing, while hurt and during a guard break. You walk at 40% speed while blocking and cannot attack until you lower it. Dodge exits a block. After lowering, it cannot go up again for 0.35 s.
@@ -69,14 +69,25 @@ A staggered enemy is frozen in place: it cannot move or attack, other bodies can
 | | Parry | Heavy hit |
 | --- | --- | --- |
 | Cause | You parry its strike | A heavy attack hits it |
-| Frozen for | 3.0 s (grunt and captain) | 1.0 s (grunt), 0.5 s (captain) |
+| Frozen for | Your weapon's parry time (table below) | Your weapon's heavy time, halved against the captain |
 
 - **Any hit wakes it**: the first hit on a staggered enemy does **double damage** and ends the stagger. The enemy goes back to waiting with the usual 0.35 s gap. The hit that causes a heavy stagger is ordinary damage.
 - **No stun-lock**: once a stagger ends, the enemy cannot be heavy-staggered again for 1.0 s. A parry ignores that window.
 - **Light hits never stagger**; they only wake an enemy that is already frozen.
 - A heavy that hits several enemies staggers each of them.
 
-A parry therefore gives you a free hit with double damage and up to 3 s to reposition or heal; a heavy interrupts what the enemy was doing and sets up a double-damage follow-up. Heavy staggers override the original brief's rule that basic attacks do not interrupt an enemy's wind-up. `heavy_stagger_time = 0` in `captain.tres` (or the grunt profile) turns it off.
+The stagger length belongs to the **weapon**, not the enemy, so it is the main difference between weapons and the natural thing to improve with upgrades or skills later:
+
+| Weapon | Parry freeze | Heavy-hit freeze |
+| --- | --- | --- |
+| Sword | 3.0 s | 1.0 s |
+| Spear | 3.5 s | 0.8 s |
+| Axe | 2.5 s | 1.5 s |
+| Daggers | 2.0 s | 0.6 s |
+
+Enemies only scale these: the captain takes the full parry time but half of a heavy-hit freeze. Because any hit ends a freeze, a longer timer buys time to line up a strike, reposition or heal, rather than extra hits. If you want a timer upgrade to mean more, the next step would be a freeze that survives some number of hits; that is not built.
+
+A parry therefore gives you a free hit with double damage and up to 3 s to reposition or heal; a heavy interrupts what the enemy was doing and sets up a double-damage follow-up. Heavy staggers override the original brief's rule that basic attacks do not interrupt an enemy's wind-up. `heavy_stagger_mult = 0` on an enemy profile turns it off for that enemy.
 
 ## The fight
 
@@ -123,8 +134,8 @@ Values you are most likely to touch:
 | Arena feels cramped or empty | `arena_size`, `spawn_axis_dist` (see above) |
 | Captain too hard or too easy | `captain.tres` (HP, attack damage and timings), `captain_heal` |
 | Parry too hard to hit, or too easy | `parry_window_shield`, `parry_window_bare` |
-| Parry reward too big or small | `stagger_time` (EnemyProfile), `stagger_damage_mult` |
-| Heavies too strong | `heavy_stagger_time` (EnemyProfile), `stagger_immunity`, the weapon's heavy damage |
+| Parry reward too big or small | the weapon's `parry_stagger_time`, `stagger_damage_mult`; `stagger_mult` on an enemy |
+| Heavies too strong | the weapon's `heavy_stagger_time`, `heavy_stagger_mult` on an enemy, `stagger_immunity`, the weapon's heavy damage |
 | Block too strong or too weak | `block_arc_*`, `guard_max_*`, `guard_cost_*`, `block_reduction_*`, `guard_regen`, `guard_break_time` |
 | A weapon feels weak or too strong | its `.tres` damage and timings |
 
@@ -216,9 +227,9 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - **Aim assist snaps fully to the target** when one is inside the 90-degree cone and the swing's reach.
 - **Dodge passes through enemy bodies.** Walking into an enemy pushes the enemy, not the hero.
 - **The UI is built in code**, not as separate scenes. Only the main, hero and enemy nodes are scenes.
-- **Heavy hits stagger** (1.0 s grunt, 0.5 s captain, 1.0 s re-stagger immunity). These numbers are my first-pass choices. A heavy now interrupts, freezes and sets up a double-damage follow-up, so it is likely the best attack; that skews the tap/hold test toward holding.
+- **Heavy hits stagger** (per-weapon lengths in the table above, half against the captain, 1.0 s re-stagger immunity). The per-weapon numbers are my first-pass choices: Spear gets the longest parry freeze and a short heavy one, Axe the reverse, Daggers short of both. A heavy now interrupts, freezes and sets up a double-damage follow-up, so it is likely the best attack; that skews the tap/hold test toward holding.
 - **Frozen enemies are immovable.** Other enemies and the hero walk through or around them rather than shoving them.
-- **Guard and parry use a meter and a timing window**, not stamina for everything. The parry window is 0.18 s with a shield and 0.12 s bare-handed. On a real phone, touch latency is easily 50 to 100 ms, so these may need widening.
+- **Guard and parry use a meter and a timing window**, not stamina for everything. The parry window is 0.28 s with a shield and 0.20 s bare-handed, widened from 0.18 and 0.12 because touch latency alone can eat 50 to 100 ms. Raising the guard earlier than the window is still a full block, so a late-ish press costs you the parry but never the hit; only raising it after the strike lands does. That is a simulation result, not a measurement on a phone, and the numbers may still need widening.
 - **BLOCK is a third right-thumb button**, above ATTACK, radius 52 (the plan said 56; 52 keeps it clear of ATTACK). Holding it means no attacking. If that feels cramped, the fallback is moving it left of DODGE.
 - **The guard is all-round by default.** That removes positioning from blocking: the shield no longer has a wider arc than a bare weapon, and flanking does nothing against a raised guard. What still separates them is the meter, the chip damage, the parry window and the lunge. If it makes block too easy, narrow the arcs.
 - **Weapons are fight styles, not just stat swaps**: reach and arc shape, a forward step (spear heavy), movement speed and dodge economy differ. Weapon choice is on the start screen only; there is no mid-fight swap button.

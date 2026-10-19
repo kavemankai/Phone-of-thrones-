@@ -99,6 +99,11 @@ func guard_reduction() -> float:
 	return tuning.block_reduction_shield if has_shield else tuning.block_reduction_bare
 
 
+## How long this weapon's parry freezes an attacker.
+func parry_stagger_time() -> float:
+	return weapon.parry_stagger_time
+
+
 func parry_window() -> float:
 	return tuning.parry_window_shield if has_shield else tuning.parry_window_bare
 
@@ -363,7 +368,7 @@ func _apply_hits() -> void:
 		if HitShapes.circle_in_sector(position, facing, cur_attack.reach, cur_attack.arc,
 				e.position, e.radius):
 			hit_ids[id] = true
-			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.heavy)
+			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
 			hit_landed.emit(e, cur_attack.heavy)
 
 

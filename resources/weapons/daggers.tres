@@ -38,3 +38,5 @@ thickness = 3.0
 color = Color(0.8, 0.95, 1, 1)
 dual = true
 one_handed = false
+parry_stagger_time = 2.0
+heavy_stagger_time = 0.6

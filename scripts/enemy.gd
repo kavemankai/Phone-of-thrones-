@@ -71,13 +71,12 @@ func is_captain() -> bool:
 	return profile != null and profile.id == "captain"
 
 
-## Cancels whatever the enemy was doing and freezes it for `duration` seconds (a parry's
-## length by default). A hit on it ends the stagger early. Every cause goes through here, so
-## every stagger gets the timer.
-func stagger(duration := -1.0) -> void:
+## Cancels whatever the enemy was doing and freezes it for `duration` seconds. A hit on it
+## ends the stagger early. Every cause goes through here, so every stagger gets the timer.
+func stagger(duration := 3.0) -> void:
 	if state == State.DEAD:
 		return
-	stagger_total = duration if duration >= 0.0 else profile.stagger_time
+	stagger_total = duration
 	stagger_left = stagger_total
 	controller.release(self)
 	hit_done = true
@@ -106,9 +105,9 @@ func is_immovable() -> bool:
 	return is_committed() or state == State.STAGGER
 
 
-## A heavy hit staggers (unless the enemy only just woke up); any hit on a staggered enemy
-## does extra damage and wakes it.
-func take_hit(damage: float, from: Vector2, knockback: float, heavy := false) -> void:
+## stagger_time > 0 (a heavy hit) staggers the enemy unless it only just woke up; any hit on a
+## staggered enemy does extra damage and wakes it.
+func take_hit(damage: float, from: Vector2, knockback: float, stagger_time := 0.0) -> void:
 	if state == State.DEAD:
 		return
 	var was_staggered := state == State.STAGGER
@@ -130,8 +129,8 @@ func take_hit(damage: float, from: Vector2, knockback: float, heavy := false) ->
 	else:
 		if was_staggered:
 			_wake()
-		elif heavy and stagger_immune <= 0.0 and profile.heavy_stagger_time > 0.0:
-			stagger(profile.heavy_stagger_time)
+		elif stagger_time > 0.0 and stagger_immune <= 0.0 and profile.heavy_stagger_mult > 0.0:
+			stagger(stagger_time * profile.heavy_stagger_mult)
 		damaged.emit(knockback > 0.0)
 
 
@@ -253,7 +252,7 @@ func _try_hit() -> void:
 			return  # dodge i-frames or immunity: the strike may still connect next step
 		hit_done = true
 		if result == Hero.HitResult.PARRIED:
-			stagger()
+			stagger(hero.parry_stagger_time() * profile.stagger_mult)
 
 
 func _process(delta: float) -> void:

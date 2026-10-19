@@ -30,6 +30,8 @@ func _spear() -> Weapon:
 	w.length = 46.0
 	w.thickness = 3.0
 	w.color = Color(0.95, 0.9, 0.7)
+	w.parry_stagger_time = 3.5
+	w.heavy_stagger_time = 0.8
 	return w
 
 
@@ -46,6 +48,8 @@ func _axe() -> Weapon:
 	w.thickness = 8.0
 	w.color = Color(0.85, 0.75, 0.55)
 	w.one_handed = false
+	w.parry_stagger_time = 2.5
+	w.heavy_stagger_time = 1.5
 	return w
 
 
@@ -63,6 +67,8 @@ func _daggers() -> Weapon:
 	w.thickness = 3.0
 	w.dual = true
 	w.one_handed = false
+	w.parry_stagger_time = 2.0
+	w.heavy_stagger_time = 0.6
 	w.color = Color(0.8, 0.95, 1.0)
 	return w
 
@@ -78,8 +84,7 @@ func _captain() -> EnemyProfile:
 	p.color = Color(0.55, 0.08, 0.14)
 	p.cap_color = Color(0.95, 0.78, 0.2)
 	p.bar_width = 64.0
-	p.stagger_time = 3.0
-	p.heavy_stagger_time = 0.5
+	p.heavy_stagger_mult = 0.5  # a heavy hit staggers the captain for half as long
 
 	var slash := AttackDef.make("Slash", 18.0, 62.0, 120.0, 0.70, 0.10, 0.60)
 	slash.max_range = 62.0
