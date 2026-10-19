@@ -17,6 +17,14 @@ func _initialize() -> void:
 	game.set_process(false)
 	await _frames(3)
 	await _shot("01_menu")
+	game.menu.set_weapon(0)
+	game.menu.set_shield(true)
+	await _frames(2)
+	await _shot("01b_menu_sword_shield")
+	game.menu.set_weapon(2)
+	await _frames(2)
+	await _shot("01c_menu_axe_no_shield")
+	game.menu.set_weapon(0)
 
 	# Three enemies: first locked grunt wedge.
 	game.start_fight(Game.Mode.THREE_CAPTAIN, 0)
@@ -51,6 +59,47 @@ func _initialize() -> void:
 		game.step(1.0 / 120.0)
 		await _frames(2)
 		await _shot("05_heavy_%s" % w.id)
+
+	# Guard poses: shield raised, bare guard.
+	for shield in [true, false]:
+		game.shield_on = shield
+		game.start_fight(Game.Mode.ONE, 0)
+		game.enemies[0].cooldown = 1000.0
+		game.hero.position = Vector2(mid, 320)
+		game.enemies[0].position = Vector2(mid, 250)
+		game.input.press_block(false)
+		await _advance(0.4)
+		await _shot("10_block_shield" if shield else "11_block_bare")
+
+	# Parry: raise the guard 0.10 s before a grunt's strike; the grunt is left dazed.
+	game.shield_on = true
+	game.start_fight(Game.Mode.ONE, 0)
+	game.hero.position = Vector2(mid, 320)
+	game.enemies[0].position = Vector2(mid, 290)
+	var grunt: Enemy = game.enemies[0]
+	var guard_n := 0
+	while not (grunt.state == Enemy.State.WINDUP) and guard_n < 600:
+		game.step(1.0 / 60.0)
+		guard_n += 1
+	while grunt.state_time < grunt.cur.windup - 0.10:
+		game.step(1.0 / 60.0)
+	game.input.press_block(false)
+	var wedge_shot := false
+	while grunt.state != Enemy.State.STAGGER and guard_n < 1200:
+		game.step(1.0 / 60.0)
+		guard_n += 1
+	await _frames(2)
+	await _shot("12_parry_dazed")
+
+	# Guard break.
+	game.start_fight(Game.Mode.ONE, 0)
+	game.enemies[0].cooldown = 1000.0
+	game.input.press_block(false)
+	await _advance(0.3)
+	game.hero.guard = 5.0
+	game.hero.receive_attack(12.0, game.hero.position + Vector2(0, -30), game.enemies[0].cur)
+	await _frames(2)
+	await _shot("13_guard_break")
 
 	# Captain attacks, each at the first locked wind-up of that attack.
 	game.start_fight(Game.Mode.CAPTAIN_ONLY, 0)
@@ -95,6 +144,14 @@ func _initialize() -> void:
 	c2._input(t2)
 	await _advance(0.45)
 	await _shot("08_touch_daggers_three_pips")
+	# BLOCK finger held with the stick: the button lights up and the guard ring shows.
+	var t3 := InputEventScreenTouch.new()
+	t3.index = 2
+	t3.pressed = true
+	t3.position = c2.block_center
+	c2._input(t3)
+	await _advance(0.3)
+	await _shot("08b_touch_block")
 
 	# Result panel.
 	game.start_fight(Game.Mode.CAPTAIN_ONLY, 2)

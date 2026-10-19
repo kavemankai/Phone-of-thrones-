@@ -22,6 +22,10 @@ extends Resource
 ## Enemies only: index of an attack that follows straight after this one's recovery
 ## (same commitment), or -1.
 @export var chain_to := -1
+## Enemies only: how much more (or less) guard a blocked hit costs.
+@export var guard_cost_mult := 1.0
+## Enemies only: a bare-weapon guard cannot stop this attack. A shield can, and a parry beats it.
+@export var breaks_bare_guard := false
 
 
 static func make(p_label: String, p_damage: float, p_reach: float, p_arc: float, p_windup: float,

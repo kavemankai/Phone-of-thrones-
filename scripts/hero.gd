@@ -3,13 +3,18 @@ extends Node2D
 ## The player character. All gameplay runs in step(dt, enemies); _process only animates.
 ## Positions are in arena space: (0,0) is the arena's top-left corner.
 
-enum State { IDLE, CHARGING, WINDUP, ACTIVE, RECOVER, DODGE, HURT, DEAD }
+enum State { IDLE, CHARGING, WINDUP, ACTIVE, RECOVER, DODGE, HURT, DEAD, BLOCK, GUARD_BREAK }
+## What an incoming attack did. NONE means it was refused (dodge i-frames, immunity, dead)
+## and may be retried; every other result consumes the attack.
+enum HitResult { NONE, HIT, BLOCKED, PARRIED }
 
 signal swung(heavy: bool)
 signal dodged
 signal damaged
 signal died
 signal hit_landed(enemy: Enemy, heavy: bool)
+signal blocked(parried: bool)
+signal guard_broken
 
 const EPS := 0.000001
 const BODY_COLOR := Color(0.25, 0.55, 1.0)
@@ -17,6 +22,8 @@ const FLASH_COLOR := Color(1, 1, 1)
 
 var tuning: Tuning
 var weapon: Weapon
+## A shield is carried only with a one-handed weapon (see equip).
+var has_shield := false
 var input: CombatInput
 var arena_size := Vector2(340, 380)
 
@@ -33,6 +40,11 @@ var cur_attack: Dictionary = {}
 var hit_ids: Dictionary = {}
 var flash := 0.0
 var radius := 16.0
+var guard := 0.0
+var guard_wait := 0.0
+var block_cd := 0.0
+var parry_flash := 0.0
+var block_flash := 0.0
 
 var _enemies: Array = []
 
@@ -46,8 +58,14 @@ func setup(t: Tuning, inp: CombatInput, arena: Vector2) -> void:
 	reset(t.hero_spawn())
 
 
+## Weapon without a shield (kept for callers that only pick a weapon).
 func set_weapon(w: Weapon) -> void:
+	equip(w, false)
+
+
+func equip(w: Weapon, shield: bool) -> void:
 	weapon = w
+	has_shield = shield and w.one_handed
 
 
 ## Weapon-adjusted numbers. Everything else about the hero comes straight from Tuning.
@@ -60,7 +78,29 @@ func recharge_time() -> float:
 
 
 func move_speed() -> float:
-	return tuning.hero_speed * weapon.move_mult
+	var shield_mult := tuning.shield_move_mult if has_shield else 1.0
+	return tuning.hero_speed * weapon.move_mult * shield_mult
+
+
+## Guard numbers: a shield gives a wider, stronger, longer-lasting guard than a bare weapon.
+func guard_arc() -> float:
+	return tuning.block_arc_shield if has_shield else tuning.block_arc_bare
+
+
+func guard_max() -> float:
+	return tuning.guard_max_shield if has_shield else tuning.guard_max_bare
+
+
+func guard_cost_mult() -> float:
+	return tuning.guard_cost_shield if has_shield else tuning.guard_cost_bare
+
+
+func guard_reduction() -> float:
+	return tuning.block_reduction_shield if has_shield else tuning.block_reduction_bare
+
+
+func parry_window() -> float:
+	return tuning.parry_window_shield if has_shield else tuning.parry_window_bare
 
 
 ## The breather before the captain: some health back and a full set of dodges.
@@ -86,6 +126,11 @@ func reset(pos: Vector2) -> void:
 	cur_attack = {}
 	hit_ids = {}
 	flash = 0.0
+	guard = guard_max()
+	guard_wait = 0.0
+	block_cd = 0.0
+	parry_flash = 0.0
+	block_flash = 0.0
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
@@ -122,10 +167,15 @@ func step(dt: float, enemies: Array) -> void:
 	_enemies = enemies
 	immune_time = maxf(0.0, immune_time - dt)
 	_recharge_dodge(dt)
+	block_cd = maxf(0.0, block_cd - dt)
+	_regen_guard(dt)
 	state_time += dt
 	match state:
 		State.IDLE:
 			if input.dodge_pressed and _try_dodge():
+				return
+			if input.block_down() and block_cd <= 0.0:
+				_raise_guard()
 				return
 			_move(dt, 1.0)
 			if input.attack_pressed:
@@ -158,6 +208,80 @@ func step(dt: float, enemies: Array) -> void:
 		State.HURT:
 			if state_time >= tuning.hurt_duration:
 				_enter(State.IDLE)
+		State.BLOCK:
+			if input.dodge_pressed and _try_dodge():
+				return
+			if not input.block_down():
+				block_cd = tuning.block_reraise_delay
+				_enter(State.IDLE)
+				return
+			guard_wait = tuning.guard_regen_delay  # no regeneration while the guard is up
+			_move(dt, tuning.block_move_mult)
+		State.GUARD_BREAK:
+			if state_time >= tuning.guard_break_time:
+				guard = guard_max() * tuning.guard_break_refill
+				guard_wait = tuning.guard_regen_delay
+				_enter(State.IDLE)
+
+
+func is_guarding() -> bool:
+	return state == State.BLOCK
+
+
+func _raise_guard() -> void:
+	charge_time = 0.0
+	_enter(State.BLOCK)
+
+
+func _in_guard_arc(origin: Vector2) -> bool:
+	var d := origin - position
+	if d.length() < 0.001:
+		return true
+	return absf(facing.angle_to(d)) <= deg_to_rad(guard_arc()) * 0.5
+
+
+## An enemy strike. Handles the guard: a parry inside the window, a block inside the guard
+## arc, otherwise an ordinary hit. The caller learns what happened from the result.
+func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult:
+	if state == State.DEAD or is_invulnerable():
+		return HitResult.NONE
+	if state == State.BLOCK and _in_guard_arc(origin):
+		if state_time < parry_window():
+			parry_flash = 0.3
+			guard_wait = tuning.guard_regen_delay
+			blocked.emit(true)
+			return HitResult.PARRIED
+		if has_shield or not atk.breaks_bare_guard:
+			_absorb(damage, atk)
+			return HitResult.BLOCKED
+	return HitResult.HIT if take_hit(damage) else HitResult.NONE
+
+
+func _absorb(damage: float, atk: AttackDef) -> void:
+	var chip := damage * (1.0 - guard_reduction())
+	if chip > 0.0:
+		hp = maxf(0.0, hp - chip)
+		flash = 0.08
+		if hp <= 0.0:
+			_enter(State.DEAD)
+			died.emit()
+			return
+	guard = maxf(0.0, guard - damage * guard_cost_mult() * atk.guard_cost_mult)
+	guard_wait = tuning.guard_regen_delay
+	block_flash = 0.15
+	if guard <= 0.0:
+		_enter(State.GUARD_BREAK)
+		guard_broken.emit()
+	else:
+		blocked.emit(false)
+
+
+func _regen_guard(dt: float) -> void:
+	if state == State.BLOCK or state == State.GUARD_BREAK or guard >= guard_max():
+		return
+	guard_wait = maxf(0.0, guard_wait - dt)
+	if guard_wait <= 0.0:
+		guard = minf(guard_max(), guard + tuning.guard_regen * dt)
 
 
 ## Returns true when the hit landed. Dodge i-frames, post-hit immunity and death all refuse it.
@@ -187,6 +311,9 @@ func _step_charging(dt: float) -> void:
 	charge_time += dt
 	_move(dt, tuning.half_speed_mult)
 	if input.dodge_pressed and _try_dodge():
+		return
+	if input.block_down() and block_cd <= 0.0:
+		_raise_guard()
 		return
 	if input.attack_released:
 		_start_attack(charge_time + EPS >= tuning.heavy_hold_time)
@@ -247,6 +374,8 @@ func _try_dodge() -> bool:
 		dodge_recharge_t = 0.0
 	dodge_charges -= 1
 	charge_time = 0.0
+	if state == State.BLOCK:
+		block_cd = tuning.block_reraise_delay
 	_enter(State.DODGE)
 	dodged.emit()
 	return true
@@ -285,6 +414,8 @@ func _clamp_to_arena(p: Vector2) -> Vector2:
 
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta)
+	parry_flash = maxf(0.0, parry_flash - delta)
+	block_flash = maxf(0.0, block_flash - delta)
 	z_index = int(position.x + position.y)  # isometric depth order: nearer is lower on screen
 	if state == State.DODGE and state_time < (tuning.dodge_iframes if tuning else 0.0):
 		modulate.a = 0.4
@@ -318,6 +449,14 @@ func _draw() -> void:
 			var outline := poly.duplicate()
 			outline.append(poly[0])
 			draw_polyline(outline, Color(1, 1, 1, 0.9), 2.0)
+	if state == State.BLOCK:
+		# The guard arc: a hit from inside it can be blocked. Same sector helper as every wedge.
+		var guard_poly := HitShapes.sector_polygon(facing, r + 34.0, guard_arc())
+		var guard_color := Color(1.0, 0.85, 0.3, 0.5) if parry_flash > 0.0 else Color(0.5, 0.8, 1.0, 0.16)
+		draw_colored_polygon(guard_poly, guard_color)
+		var guard_outline := guard_poly.duplicate()
+		guard_outline.append(guard_poly[0])
+		draw_polyline(guard_outline, Color(0.7, 0.9, 1.0, 0.55), 2.0)
 	if state == State.CHARGING:
 		if is_heavy_ready():
 			var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.02)
@@ -332,7 +471,21 @@ func _draw() -> void:
 	var side := FLASH_COLOR if flash > 0.0 else BODY_COLOR
 	if state == State.DEAD:
 		side = Color(0.3, 0.35, 0.45)
+	var shield_pos := _shield_offset(height)
+	# A raised shield is always held in front; a carried one is hidden behind the body when
+	# it is on the far side.
+	var shield_in_front := state == State.BLOCK or shield_pos.y > -height * 0.5
+	if has_shield and not shield_in_front:
+		_draw_shield(shield_pos, state == State.BLOCK)
 	Iso.draw_cylinder(self, r, height, side, Color(0.05, 0.1, 0.25))
+	if has_shield and shield_in_front:
+		_draw_shield(shield_pos, state == State.BLOCK)
+	if state == State.GUARD_BREAK:
+		# Dazed: stars circling the head.
+		var spin := Time.get_ticks_msec() * 0.008
+		for i in 3:
+			var a := spin + i * TAU / 3.0
+			draw_circle(Vector2(0.0, -height - 8.0) + Vector2(cos(a), sin(a) * 0.4) * r * 0.9, 3.5, Color(1.0, 0.9, 0.3))
 	# Facing marker on top of the body.
 	var top := Vector2(0.0, -height)
 	var tip := top + Iso.to_screen(facing) * r * 0.8
@@ -341,7 +494,40 @@ func _draw() -> void:
 	_draw_weapon(height * 0.55, attacking)
 
 
+## Screen-space centre of the shield: raised in front of the body, or carried at its left side.
+func _shield_offset(height: float) -> Vector2:
+	var mid := Vector2(0.0, -height * 0.5)
+	if state == State.BLOCK:
+		return mid + Iso.to_screen(facing) * radius * 1.6
+	return mid + Iso.to_screen(facing.rotated(-PI * 0.5)) * radius * 1.0
+
+
+func _draw_shield(center: Vector2, raised: bool) -> void:
+	var k := 1.0 if raised else 0.8
+	var w := radius * 1.15 * k
+	var h := radius * 1.5 * k
+	var body := PackedVector2Array([
+		center + Vector2(-w, -h), center + Vector2(w, -h), center + Vector2(w, h * 0.1),
+		center + Vector2(0.0, h * 1.1), center + Vector2(-w, h * 0.1)])
+	var face := Color(0.62, 0.68, 0.8)
+	if parry_flash > 0.0:
+		face = Color(1.0, 0.85, 0.3)
+	elif block_flash > 0.0:
+		face = Color(1, 1, 1)
+	draw_colored_polygon(body, face)
+	var outline := body.duplicate()
+	outline.append(body[0])
+	draw_polyline(outline, Color(0.15, 0.18, 0.3), 2.5)
+	draw_circle(center + Vector2(0.0, -h * 0.1), w * 0.3, Color(0.35, 0.4, 0.55))
+
+
 func _draw_weapon(anchor_height: float, attacking: bool) -> void:
+	if state == State.BLOCK and not has_shield:
+		# Bare guard: the weapon is held across the body.
+		var c := Vector2(0.0, -anchor_height) + Iso.to_screen(facing) * radius * 1.0
+		var half := Iso.to_screen(facing.rotated(PI * 0.5)).normalized() * (radius + weapon.length) * 0.55
+		draw_line(c - half, c + half, weapon.color, weapon.thickness + 1.0)
+		return
 	var base := facing.angle()
 	var ang := base + 0.6
 	var length := radius + weapon.length

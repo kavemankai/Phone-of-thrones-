@@ -40,8 +40,8 @@ class Rig:
 		hero.hit_landed.connect(func(_e, _h): hits += 1)
 		hero.damaged.connect(func(): hurts += 1)
 
-	func use_weapon(w: Weapon) -> void:
-		hero.set_weapon(w)
+	func use_weapon(w: Weapon, shield := false) -> void:
+		hero.equip(w, shield)
 		hero.reset(hero.position)
 
 	func add_enemy(pos: Vector2, idx := 0, prof: EnemyProfile = null) -> Enemy:
@@ -129,6 +129,14 @@ func _initialize() -> void:
 	test_captain_attacks()
 	test_captain_flow()
 	test_scripted_player_per_weapon()
+	test_block_input_and_layout()
+	test_guard_rules()
+	test_block_arc_and_costs()
+	test_guard_break_and_regen()
+	test_parry()
+	test_captain_vs_guard()
+	test_shield_equipment()
+	test_blocking_player()
 	print("\n%d passed, %d failed" % [passes, fails])
 	quit(fails)
 
@@ -771,7 +779,7 @@ func nearest_alive(g: Game) -> Enemy:
 
 ## A simple scripted player: walk to the nearest enemy, tap-attack at the weapon's range and
 ## sidestep-dodge a locked strike. Deterministic, no randomness.
-func bot(g: Game) -> void:
+func bot(g: Game, block := false) -> void:
 	var h := g.hero
 	var target := nearest_alive(g)
 	if target == null:
@@ -783,6 +791,27 @@ func bot(g: Game) -> void:
 	# A dodge cancels a charge but the "finger" is still down: lift it, as a player would.
 	if h.state == Hero.State.IDLE and g.input.attack_down():
 		g.input.release_attack(false)
+	if block:
+		# Guard up in the last 0.28 s of a locked strike that covers us (a plain block; a parry
+		# only if it happens to be raised inside the window), and through the strike itself.
+		var threatened := false
+		var threat_dir := Vector2.ZERO
+		for e in g.enemies:
+			if e.is_dead() or not (e.state == Enemy.State.WINDUP or e.state == Enemy.State.ACTIVE):
+				continue
+			var left_b: float = e.cur.windup - e.state_time if e.state == Enemy.State.WINDUP else 0.0
+			if (e.state == Enemy.State.ACTIVE or (e.locked and left_b <= 0.28)) \
+					and HitShapes.circle_in_sector(e.attack_origin, e.attack_dir, e.cur.reach,
+							e.cur.arc_deg, h.position, h.radius):
+				threatened = true
+				threat_dir = e.attack_origin - h.position
+		if threatened:
+			# Turn the guard toward the attacker, then hold it up through the strike.
+			if threat_dir.length() > 0.001:
+				g.input.key_move = threat_dir.normalized() * 0.3
+			g.input.press_block(false)
+			return
+		g.input.release_block(false)
 	for e in g.enemies:
 		if e.is_dead() or e.state != Enemy.State.WINDUP or not e.locked:
 			continue
@@ -801,13 +830,13 @@ func bot(g: Game) -> void:
 		g.input.release_attack(false)
 
 
-func play(g: Game, max_seconds: float, use_bot: bool) -> void:
+func play(g: Game, max_seconds: float, use_bot: bool, block := false) -> void:
 	var steps := int(max_seconds * 60.0)
 	for i in steps:
 		if g.state != Game.State.FIGHTING:
 			break
 		if use_bot:
-			bot(g)
+			bot(g, block)
 		g.step(1.0 / 60.0)
 
 
@@ -922,6 +951,7 @@ func snapshot(g: Game) -> Dictionary:
 		"enemies": es, "enemy_nodes": enemy_nodes, "commits": g.controller.count(),
 		"peak": g.controller.peak, "mode": g.mode, "weapon": g.hero.weapon.id,
 		"captain": [g.captain_spawned, g.intermission_active, g.intermission_left],
+		"guard": [g.hero.guard, g.hero.has_shield, g.hero.block_cd, g.hero.guard_wait],
 		"input": [g.input.touch_move, g.input.key_move, g.input.attack_touch, g.input.attack_key,
 				g.input.attack_pressed, g.input.attack_released, g.input.dodge_pressed],
 		"controls": [g.controls.joy_index, g.controls.atk_index, g.controls.dodge_index],
@@ -933,6 +963,7 @@ func test_retry_resets_everything() -> void:
 	var g := make_game()
 	var expected := {Game.Mode.THREE_CAPTAIN: 3, Game.Mode.ONE: 1, Game.Mode.CAPTAIN_ONLY: 1}
 	for mode in expected:
+		g.shield_on = (mode == Game.Mode.ONE)  # cover both loadouts
 		g.start_fight(mode)
 		var baseline := snapshot(g)
 		var identical := true
@@ -943,6 +974,8 @@ func test_retry_resets_everything() -> void:
 			g.controls.atk_index = 3
 			play(g, 6.0 + i * 0.3, true)
 			g.input.press_attack(false)
+			g.input.press_block(false)
+			g.hero.guard = 3.0
 			g.hero.take_hit(1.0)
 			g.start_fight(mode)
 			if snapshot(g) != baseline:
@@ -957,7 +990,7 @@ func test_retry_resets_everything() -> void:
 	g.hero.take_hit(1000.0)
 	g.step(1.0 / 60.0)
 	check("defeat moves to the result state", g.state == Game.State.RESULT)
-	g.menu.fight_requested.emit(Game.Mode.ONE, 0)
+	g.menu.fight_requested.emit(Game.Mode.ONE, 0, false)
 	check("Retry from the result screen starts a new 1-enemy fight", g.state == Game.State.FIGHTING and g.enemies.size() == 1 and g.hero.hp == g.tuning.hero_max_hp and not g.hero.is_dead())
 	g.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	check("focus loss through the Game node clears held input", not g.input.attack_down() and g.input.touch_move == Vector2.ZERO)
@@ -1317,7 +1350,7 @@ func test_captain_flow() -> void:
 	check("captain-only ends with the captain's death", g.outcome == Game.Outcome.VICTORY)
 
 	# Weapon choice through the menu, and it survives Retry.
-	g.menu.fight_requested.emit(Game.Mode.CAPTAIN_ONLY, 3)
+	g.menu.fight_requested.emit(Game.Mode.CAPTAIN_ONLY, 3, false)
 	check("menu picks daggers and captain-only", g.mode == Game.Mode.CAPTAIN_ONLY and g.hero.weapon.id == "daggers" and g.hero.dodge_charges == 3 and g.captain_alive())
 	g.start_fight(Game.Mode.ONE)
 	check("Retry keeps the chosen weapon", g.hero.weapon.id == "daggers" and g.weapon_index == 3)
@@ -1342,3 +1375,457 @@ func test_scripted_player_per_weapon() -> void:
 		play(n, 240.0, true)
 		print("        (%s, normal HP: %s in %.1f s, hero hp %d, captain seen %s)" % [n.weapon().display_name, Game.Outcome.keys()[n.outcome], n.fight_time, ceili(n.hero.hp), n.captain_spawned])
 		n.queue_free()
+
+
+func test_block_input_and_layout() -> void:
+	section("Block button, keyboard and layout")
+	var inp := CombatInput.new()
+	var c := make_controls(inp)
+	var vp := Vector2(720, 1280)
+	check("BLOCK button sits inside the control band", c.block_center.y - TouchControls.BLOCK_R >= c.band.position.y and c.block_center.y + TouchControls.BLOCK_R <= vp.y and c.block_center.x > vp.x * 0.5)
+	check("BLOCK does not overlap ATTACK or DODGE", c.block_center.distance_to(c.attack_center) > TouchControls.BLOCK_R + TouchControls.ATTACK_R and c.block_center.distance_to(c.dodge_center) > TouchControls.BLOCK_R + TouchControls.DODGE_R)
+	c._input(screen_touch(3, c.block_center, true))
+	check("touching BLOCK raises the guard input", inp.block_down() and c.block_index == 3)
+	c._input(screen_touch(3, c.block_center, false))
+	check("lifting the finger lowers it", not inp.block_down() and c.block_index == -1)
+	c._input(screen_touch(3, c.block_center, true))
+	c._input(screen_drag(3, c.block_center + Vector2(0, -300)))
+	check("sliding well off BLOCK lowers the guard", not inp.block_down())
+	c._input(screen_touch(3, c.block_center, false))
+	c.free()
+
+	var inp2 := CombatInput.new()
+	var c2 := make_controls(inp2)
+	c2._input(screen_touch(0, c2.joy_hint, true))
+	c2._input(screen_drag(0, c2.joy_hint + Vector2(80, 0)))
+	c2._input(screen_touch(1, c2.block_center, true))
+	c2._input(screen_touch(2, c2.attack_center, true))
+	check("stick, BLOCK and ATTACK fingers all register at once", inp2.touch_move.x > 0.5 and inp2.block_down() and inp2.attack_down())
+	c2._input(screen_touch(1, c2.block_center, false))
+	check("lifting BLOCK leaves the stick and attack alone", not inp2.block_down() and inp2.attack_down() and inp2.touch_move.length() > 0.5)
+	c2._input(screen_touch(1, c2.block_center, true))
+	c2.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
+	check("focus loss clears the guard input and finger", not inp2.block_down() and c2.block_index == -1)
+	c2.free()
+
+	var g := make_game()
+	g.start_fight(Game.Mode.ONE)
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_K
+	key.pressed = true
+	g._input(key)
+	check("K raises the guard", g.input.block_down())
+	var key_up := InputEventKey.new()
+	key_up.physical_keycode = KEY_K
+	key_up.pressed = false
+	g._input(key_up)
+	check("releasing K lowers it", not g.input.block_down())
+	g.queue_free()
+
+
+func test_guard_rules() -> void:
+	section("Raising and lowering the guard")
+	var r := Rig.new(root, T)
+	r.input.press_block(false)
+	r.tick(0.01)
+	check("block from idle", r.hero.state == Hero.State.BLOCK and r.hero.is_guarding())
+	r.input.release_block(false)
+	r.tick(0.01)
+	check("lowering returns to idle", r.hero.state == Hero.State.IDLE)
+	r.input.press_block(false)
+	r.run(0.30, 0.01)
+	check("re-raising right away is refused for 0.35 s", r.hero.state == Hero.State.IDLE)
+	r.run(0.10, 0.01)
+	check("then it goes up", r.hero.state == Hero.State.BLOCK)
+	r.free_all()
+
+	var c := Rig.new(root, T)
+	c.input.press_attack(false)
+	c.run(0.20, 0.01)
+	c.input.press_block(false)
+	c.tick(0.01)
+	check("block cancels a charge", c.hero.state == Hero.State.BLOCK)
+	c.input.release_attack(false)
+	c.input.release_block(false)
+	c.run(1.0)
+	check("a cancelled charge never attacks", c.swings == 0)
+	c.free_all()
+
+	var w := Rig.new(root, T)
+	w.input.press_attack(false)
+	w.tick(0.005)
+	w.input.release_attack(false)
+	w.tick(0.005)
+	check("the swing has started", w.hero.state == Hero.State.WINDUP)
+	w.input.press_block(false)
+	w.tick(0.005)
+	check("block is refused during wind-up", w.hero.state == Hero.State.WINDUP)
+	check("reaches the strike", w.until_state(Hero.State.ACTIVE))
+	check("still refused during the strike", w.hero.state == Hero.State.ACTIVE)
+	check("reaches recovery", w.until_state(Hero.State.RECOVER))
+	check("still refused during recovery", w.hero.state == Hero.State.RECOVER)
+	w.run(1.0)
+	check("a guard held through the swing goes up when it ends", w.hero.state == Hero.State.BLOCK)
+	w.free_all()
+
+	var h := Rig.new(root, T)
+	h.hero.take_hit(10.0)
+	h.input.press_block(false)
+	h.tick(0.01)
+	check("block is refused while hurt", h.hero.state == Hero.State.HURT)
+	h.run(0.3, 0.01)
+	check("held guard goes up once hurt ends", h.hero.state == Hero.State.BLOCK)
+	h.free_all()
+
+	var d := Rig.new(root, T)
+	d.input.press_block(false)
+	d.tick(0.01)
+	d.input.press_dodge()
+	d.tick(0.01)
+	check("dodge exits a block", d.hero.state == Hero.State.DODGE)
+	d.run(0.4, 0.01)
+	check("the guard does not snap back up straight after the dodge", d.hero.state == Hero.State.IDLE or d.hero.state == Hero.State.BLOCK)
+	d.free_all()
+
+	var a := Rig.new(root, T)
+	a.input.press_block(false)
+	a.tick(0.01)
+	a.input.press_attack(false)
+	a.tick(0.01)
+	a.input.release_attack(false)
+	a.tick(0.01)
+	a.run(0.3, 0.01)
+	check("attack presses are ignored while blocking", a.swings == 0 and a.hero.state == Hero.State.BLOCK)
+	a.input.release_block(false)
+	a.run(0.5)
+	check("and not queued for later", a.swings == 0)
+	a.free_all()
+
+	var g := make_game()
+	var sword: Weapon = g.weapons[0]
+	for spec in [[false, false, 180.0], [false, true, 72.0], [true, false, 171.0], [true, true, 68.4]]:
+		var m := Rig.new(root, T)
+		m.use_weapon(sword, spec[0])
+		m.hero.position = Vector2(500, 360)
+		if spec[1]:
+			m.input.press_block(false)
+			m.tick(0.01)
+		m.input.key_move = Vector2(-1, 0)
+		var x0 := m.hero.position.x
+		m.run(1.0, 0.01)
+		check("walking speed: shield %s, blocking %s -> %.1f" % [spec[0], spec[1], spec[2]], absf((x0 - m.hero.position.x) - spec[2]) < 1.0, "dx=%s" % (x0 - m.hero.position.x))
+		m.free_all()
+	g.queue_free()
+
+
+func guard_rig(shield: bool, settle := 0.30) -> Rig:
+	var r := Rig.new(root, T, Vector2(320, 360))
+	r.use_weapon(Weapon.sword_from(T), shield)
+	r.input.press_block(false)
+	r.run(settle, 0.01)
+	return r
+
+
+func test_block_arc_and_costs() -> void:
+	section("Guard arc, damage and guard cost")
+	var atk := AttackDef.make("Test", 12.0, 50.0, 100.0, 0.65, 0.10, 0.65)
+	var cases := [[true, 69.0, true], [true, 75.0, false], [false, 45.0, true], [false, 55.0, false], [true, 180.0, false], [false, 180.0, false]]
+	for cs in cases:
+		var r := guard_rig(cs[0])
+		var origin := r.hero.position + Vector2.UP.rotated(deg_to_rad(cs[1])) * 40.0
+		var res := r.hero.receive_attack(12.0, origin, atk)
+		var blocked := res == Hero.HitResult.BLOCKED
+		check("%s guard vs a hit from %d degrees: %s" % ["shield" if cs[0] else "bare", int(cs[1]), "blocked" if cs[2] else "hit"],
+				blocked == cs[2] and (res == Hero.HitResult.HIT) == (not cs[2]), "result=%d" % res)
+		if not cs[2]:
+			check("  an unblocked hit hurts and interrupts the guard", r.hero.state == Hero.State.HURT and is_equal_approx(r.hero.hp, 88.0))
+		r.free_all()
+
+	var s := guard_rig(true)
+	var res_s := s.hero.receive_attack(12.0, s.hero.position + Vector2(0, -40), atk)
+	check("shield: blocked hit costs 12 guard and no health", res_s == Hero.HitResult.BLOCKED and is_equal_approx(s.hero.guard, 68.0) and is_equal_approx(s.hero.hp, 100.0))
+	check("a block causes no hurt state and no immunity", s.hero.state == Hero.State.BLOCK and s.hero.immune_time == 0.0)
+	s.free_all()
+	var b := guard_rig(false)
+	var res_b := b.hero.receive_attack(12.0, b.hero.position + Vector2(0, -40), atk)
+	check("bare: 18 guard cost and 4.8 chip damage", res_b == Hero.HitResult.BLOCKED and is_equal_approx(b.hero.guard, 22.0) and is_equal_approx(b.hero.hp, 95.2), "guard=%s hp=%s" % [b.hero.guard, b.hero.hp])
+	check("bare chip damage does not stagger", b.hero.state == Hero.State.BLOCK)
+	b.free_all()
+
+	# A real enemy strike is blocked once, not once per active frame.
+	var e := guard_rig(true, 0.0)
+	e.run_enemies = true
+	var grunt := e.add_enemy(Vector2(320, 330))
+	while grunt.state != Enemy.State.RECOVER:
+		e.tick(0.005)
+	check("one enemy strike is one block: guard 68, no damage", is_equal_approx(e.hero.guard, 68.0) and is_equal_approx(e.hero.hp, 100.0) and e.hurts == 0, "guard=%s hp=%s" % [e.hero.guard, e.hero.hp])
+	e.run(0.3)
+	check("it stays at 68 after the strike ends", is_equal_approx(e.hero.guard, 68.0))
+	e.free_all()
+
+	# The drawn guard wedge equals the guard test.
+	for shield in [true, false]:
+		var gr := guard_rig(shield)
+		var arc := gr.hero.guard_arc()
+		var poly := HitShapes.sector_polygon(gr.hero.facing, 50.0, arc)
+		var bad := 0
+		for deg in range(0, 360):
+			var edge_gap := absf(absf(deg if deg <= 180 else deg - 360) - arc * 0.5)
+			if edge_gap < 0.6:
+				continue
+			var dir := Vector2.UP.rotated(deg_to_rad(float(deg)))
+			if Geometry2D.is_point_in_polygon(dir * 30.0, poly) != gr.hero._in_guard_arc(gr.hero.position + dir * 30.0):
+				bad += 1
+		check("%s guard wedge equals the block test (%d degrees)" % ["shield" if shield else "bare", int(arc)], bad == 0, "bad=%d" % bad)
+		gr.free_all()
+
+
+func test_guard_break_and_regen() -> void:
+	section("Guard break and regeneration")
+	var atk := AttackDef.make("Test", 12.0, 50.0, 100.0, 0.65, 0.10, 0.65)
+	var r := guard_rig(true)
+	r.hero.guard = 10.0
+	var res := r.hero.receive_attack(12.0, r.hero.position + Vector2(0, -40), atk)
+	check("an emptying block is still absorbed", res == Hero.HitResult.BLOCKED and is_equal_approx(r.hero.hp, 100.0))
+	check("then the guard breaks and you are stunned", r.hero.state == Hero.State.GUARD_BREAK and r.hero.guard == 0.0)
+	r.input.press_attack(false)
+	r.input.press_dodge()
+	r.tick(0.01)
+	check("no actions during the stun", r.hero.state == Hero.State.GUARD_BREAK and r.swings == 0)
+	r.run(0.4, 0.01)
+	check("still stunned at 0.4 s", r.hero.state == Hero.State.GUARD_BREAK)
+	var open := r.hero.receive_attack(12.0, r.hero.position + Vector2(0, -40), atk)
+	check("a hit during the stun lands", open == Hero.HitResult.HIT and is_equal_approx(r.hero.hp, 88.0))
+	r.free_all()
+
+	var b := guard_rig(true)
+	b.hero.guard = 10.0
+	b.hero.receive_attack(12.0, b.hero.position + Vector2(0, -40), atk)
+	b.input.release_block(false)
+	b.run(0.9, 0.01)
+	check("the stun lasts 0.8 s and leaves guard at 50%", b.hero.state == Hero.State.IDLE and is_equal_approx(b.hero.guard, 40.0), "state=%d guard=%s" % [b.hero.state, b.hero.guard])
+	b.free_all()
+
+	var g := guard_rig(true)
+	g.hero.receive_attack(12.0, g.hero.position + Vector2(0, -40), atk)
+	g.input.release_block(false)
+	g.tick(0.01)
+	var base := g.hero.guard
+	g.run(0.5, 0.01)
+	check("no regeneration for 0.6 s after a block", is_equal_approx(g.hero.guard, base), "guard=%s base=%s" % [g.hero.guard, base])
+	g.run(1.0, 0.01)
+	check("then 25 per second", absf(g.hero.guard - minf(80.0, base + 25.0 * 0.9)) < 1.0, "guard=%s" % g.hero.guard)
+	g.free_all()
+
+	var h := guard_rig(true)
+	h.hero.guard = 20.0
+	h.run(2.0, 0.01)
+	check("no regeneration while the guard is held up", is_equal_approx(h.hero.guard, 20.0))
+	h.free_all()
+
+
+func parry_rig(shield: bool, cap: bool, lead: float) -> Array:
+	## Enemy adjacent in front of the hero; the hero raises the guard `lead` seconds before the strike.
+	var r := Rig.new(root, T, Vector2(320, 360))
+	r.use_weapon(Weapon.sword_from(T), shield)
+	r.run_enemies = true
+	var prof: EnemyProfile = (load("res://resources/captain.tres") as EnemyProfile) if cap else null
+	var e := r.add_enemy(Vector2(320, 330), 0, prof)
+	if cap:
+		e.pattern_pos = 1  # first the slash
+	while not (e.state == Enemy.State.WINDUP):
+		r.tick(0.005)
+	var target: float = e.cur.windup - lead
+	while e.state_time < target - 0.0001:
+		r.tick(0.005)
+	r.input.press_block(false)
+	while e.state != Enemy.State.RECOVER and e.state != Enemy.State.STAGGER:
+		r.tick(0.005)
+	return [r, e]
+
+
+func test_parry() -> void:
+	section("Parry")
+	var p1 := parry_rig(true, false, 0.10)
+	var r1: Rig = p1[0]
+	var e1: Enemy = p1[1]
+	check("raising the guard 0.10 s before the hit parries it (shield)", e1.state == Enemy.State.STAGGER and is_equal_approx(r1.hero.hp, 100.0))
+	check("a parry costs no guard", is_equal_approx(r1.hero.guard, 80.0))
+	check("the parried enemy's commitment is released", r1.ctrl.count() == 0)
+	var staggered_hp := e1.hp
+	r1.run(0.2)
+	e1.take_hit(10.0, r1.hero.position, 0.0)
+	check("a staggered enemy takes x1.5 damage", is_equal_approx(staggered_hp - e1.hp, 15.0), "dmg=%s" % (staggered_hp - e1.hp))
+	r1.run(0.7)
+	check("still dazed at 0.9 s", e1.state == Enemy.State.STAGGER)
+	r1.run(0.2)
+	check("recovers after 1.0 s into POSITION with the 0.35 s gap", e1.state == Enemy.State.POSITION and e1.cooldown <= T.enemy_attack_gap + 0.001)
+	r1.free_all()
+
+	var p2 := parry_rig(true, false, 0.30)
+	check("raising it 0.30 s early is an ordinary block", p2[1].state == Enemy.State.RECOVER and is_equal_approx(p2[0].hero.guard, 68.0) and is_equal_approx(p2[0].hero.hp, 100.0))
+	p2[0].free_all()
+
+	var p3 := parry_rig(true, false, 0.15)
+	check("0.15 s before the hit still parries with a shield (window 0.18)", p3[1].state == Enemy.State.STAGGER)
+	p3[0].free_all()
+	var p4 := parry_rig(false, false, 0.15)
+	check("0.15 s before the hit does not parry bare-handed (window 0.12)", p4[1].state == Enemy.State.RECOVER and is_equal_approx(p4[0].hero.guard, 22.0))
+	p4[0].free_all()
+	var p5 := parry_rig(false, false, 0.08)
+	check("0.08 s before the hit parries bare-handed", p5[1].state == Enemy.State.STAGGER and is_equal_approx(p5[0].hero.hp, 100.0) and is_equal_approx(p5[0].hero.guard, 40.0))
+	p5[0].free_all()
+
+	var c1 := parry_rig(true, true, 0.10)
+	var cr: Rig = c1[0]
+	var ce: Enemy = c1[1]
+	check("the captain can be parried, for 18 damage avoided", ce.state == Enemy.State.STAGGER and is_equal_approx(cr.hero.hp, 100.0))
+	cr.run(0.6)
+	check("captain stagger is 0.7 s: still dazed at 0.6 s", ce.state == Enemy.State.STAGGER)
+	cr.run(0.2)
+	check("and over by 0.8 s", ce.state == Enemy.State.POSITION)
+	cr.free_all()
+
+	# Parrying the first combo hit cancels the second.
+	var cp := Rig.new(root, T, Vector2(320, 360))
+	cp.use_weapon(Weapon.sword_from(T), true)
+	cp.run_enemies = true
+	var combo := cp.add_enemy(Vector2(320, 330), 0, load("res://resources/captain.tres") as EnemyProfile)
+	combo.pattern_pos = 2
+	while combo.state != Enemy.State.WINDUP:
+		cp.tick(0.005)
+	while combo.state_time < combo.cur.windup - 0.10:
+		cp.tick(0.005)
+	cp.input.press_block(false)
+	var saw_second := false
+	var t_end := cp.time + 1.2
+	while cp.time < t_end:
+		cp.tick(0.005)
+		if combo.cur.label == "Combo 2" and combo.state == Enemy.State.WINDUP:
+			saw_second = true
+	check("parrying combo hit 1 cancels hit 2", not saw_second and is_equal_approx(cp.hero.hp, 100.0))
+	cp.free_all()
+
+
+func test_captain_vs_guard() -> void:
+	section("Captain attacks against a guard")
+	# Hold the guard from the start so every hit is a plain block (past the parry window).
+	var lunge_pos := [Vector2(320, 425), Vector2(320, 300)]
+	for shield in [true, false]:
+		var pair := captain_rig(lunge_pos[0], lunge_pos[1])
+		var r: Rig = pair[0]
+		var c: Enemy = pair[1]
+		r.use_weapon(Weapon.sword_from(T), shield)
+		r.input.press_block(false)
+		while not (c.state == Enemy.State.WINDUP and c.cur.label == "Lunge"):
+			r.tick(0.005)
+		while c.state != Enemy.State.RECOVER:
+			r.tick(0.005)
+		if shield:
+			check("lunge vs shield: blocked, costs 44 of 80 guard, no damage", is_equal_approx(r.hero.hp, 100.0) and is_equal_approx(r.hero.guard, 36.0), "hp=%s guard=%s" % [r.hero.hp, r.hero.guard])
+		else:
+			check("lunge vs a bare guard: breaks through for the full 22, guard untouched", is_equal_approx(r.hero.hp, 78.0) and is_equal_approx(r.hero.guard, 40.0), "hp=%s guard=%s" % [r.hero.hp, r.hero.guard])
+		r.free_all()
+
+	var parry_lunge := [true, false]
+	for shield in parry_lunge:
+		var pair2 := captain_rig(lunge_pos[0], lunge_pos[1])
+		var r2: Rig = pair2[0]
+		var c2: Enemy = pair2[1]
+		r2.use_weapon(Weapon.sword_from(T), shield)
+		while not (c2.state == Enemy.State.WINDUP and c2.cur.label == "Lunge"):
+			r2.tick(0.005)
+		while c2.state_time < 0.72:
+			r2.tick(0.005)
+		r2.input.press_block(false)
+		while c2.state != Enemy.State.RECOVER and c2.state != Enemy.State.STAGGER:
+			r2.tick(0.005)
+		check("a parry beats the lunge (%s)" % ("shield" if shield else "bare"), c2.state == Enemy.State.STAGGER and is_equal_approx(r2.hero.hp, 100.0), "state=%d hp=%s" % [c2.state, r2.hero.hp])
+		r2.free_all()
+
+	# Slash and combo against a held guard.
+	var sp := captain_rig(Vector2(320, 360), Vector2(320, 330))
+	var sr: Rig = sp[0]
+	var sc: Enemy = sp[1]
+	sr.use_weapon(Weapon.sword_from(T), false)
+	sr.input.press_block(false)
+	while sc.state != Enemy.State.RECOVER:
+		sr.tick(0.005)
+	check("slash vs a bare guard: 7.2 chip damage, 27 guard", is_equal_approx(sr.hero.hp, 92.8) and is_equal_approx(sr.hero.guard, 13.0), "hp=%s guard=%s" % [sr.hero.hp, sr.hero.guard])
+	sr.free_all()
+
+	var cp := captain_rig(Vector2(320, 360), Vector2(320, 330))
+	var cr: Rig = cp[0]
+	var cc: Enemy = cp[1]
+	cr.use_weapon(Weapon.sword_from(T), true)
+	cc.pattern_pos = 2
+	cr.input.press_block(false)
+	var steps := 0
+	while steps < 2000 and cc.state != Enemy.State.POSITION:
+		cr.tick(0.005)
+		steps += 1
+	check("combo vs a shield: both hits blocked (14 + 20 guard), no damage", is_equal_approx(cr.hero.hp, 100.0) and is_equal_approx(cr.hero.guard, 46.0), "hp=%s guard=%s" % [cr.hero.hp, cr.hero.guard])
+	cr.free_all()
+
+
+func test_shield_equipment() -> void:
+	section("Shield equipment")
+	var g := make_game()
+	var sword: Weapon = g.weapons[0]
+	var spear: Weapon = g.weapons[1]
+	var axe: Weapon = g.weapons[2]
+	var daggers: Weapon = g.weapons[3]
+	check("sword and spear are one-handed, axe and daggers are not", sword.one_handed and spear.one_handed and not axe.one_handed and not daggers.one_handed)
+	g.hero.equip(sword, true)
+	check("shield with the sword: arc 140, guard 80, window 0.18", g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 140.0) and is_equal_approx(g.hero.guard_max(), 80.0) and is_equal_approx(g.hero.parry_window(), 0.18))
+	g.hero.equip(axe, true)
+	check("shield with the axe is ignored: arc 100, guard 40, window 0.12", not g.hero.has_shield and is_equal_approx(g.hero.guard_arc(), 100.0) and is_equal_approx(g.hero.guard_max(), 40.0) and is_equal_approx(g.hero.parry_window(), 0.12))
+
+	g.menu.set_weapon(0)
+	g.menu.set_shield(true)
+	check("menu: the shield toggle works for the sword", not g.menu._shield_button.disabled and g.menu.shield_usable())
+	g.menu.set_weapon(2)
+	check("menu: the toggle is disabled for the axe and the shield is unusable", g.menu._shield_button.disabled and not g.menu.shield_usable())
+	g.menu.set_weapon(3)
+	check("menu: also disabled for the daggers", g.menu._shield_button.disabled and not g.menu.shield_usable())
+	g.menu.set_weapon(1)
+	check("menu: back on for the spear, choice remembered", not g.menu._shield_button.disabled and g.menu.shield_usable())
+
+	g.menu.fight_requested.emit(Game.Mode.ONE, 0, true)
+	check("starting with a shield equips it", g.shield_on and g.hero.has_shield and is_equal_approx(g.hero.guard, 80.0) and g.loadout_name() == "Sword + Shield")
+	g.start_fight(Game.Mode.ONE)
+	check("Retry keeps the shield", g.hero.has_shield)
+	g.hero.guard = 5.0
+	g.input.press_block(false)
+	g.start_fight(Game.Mode.ONE)
+	check("Retry restores guard and clears the held guard", is_equal_approx(g.hero.guard, 80.0) and not g.input.block_down() and g.hero.state == Hero.State.IDLE)
+	g.menu.fight_requested.emit(Game.Mode.ONE, 2, true)
+	check("a two-handed weapon drops the shield even if asked", not g.hero.has_shield and g.loadout_name() == "Axe")
+	g.queue_free()
+
+
+func test_blocking_player() -> void:
+	section("Scripted blocking player")
+	for wi in [0, 1]:
+		var inflated := make_game()
+		inflated.tuning.hero_max_hp = 100000.0
+		inflated.shield_on = true
+		inflated.start_fight(Game.Mode.THREE_CAPTAIN, wi)
+		var counts := [0, 0, 0]
+		inflated.hero.blocked.connect(func(parried: bool): counts[1 if parried else 0] += 1)
+		inflated.hero.guard_broken.connect(func(): counts[2] += 1)
+		play(inflated, 240.0, true, true)
+		check("%s + Shield: 3 enemies and the captain are beaten by a blocking player (inflated HP)" % inflated.weapon().display_name,
+				inflated.outcome == Game.Outcome.VICTORY and inflated.captain_spawned, "outcome=%s t=%.1f" % [inflated.outcome, inflated.fight_time])
+		check("  the run actually used blocks and parries", counts[0] + counts[1] > 0, str(counts))
+		print("        (%s + Shield, blocking bot, inflated HP: %.1f s, %d blocks, %d parries, %d guard breaks)" % [inflated.weapon().display_name, inflated.fight_time, counts[0], counts[1], counts[2]])
+		inflated.queue_free()
+		var normal := make_game()
+		normal.shield_on = true
+		normal.start_fight(Game.Mode.THREE_CAPTAIN, wi)
+		var n_counts := [0, 0, 0]
+		normal.hero.blocked.connect(func(parried: bool): n_counts[1 if parried else 0] += 1)
+		normal.hero.guard_broken.connect(func(): n_counts[2] += 1)
+		play(normal, 240.0, true, true)
+		print("        (%s + Shield, blocking bot, normal HP: %s in %.1f s, hero hp %d, %d blocks, %d parries, %d guard breaks)" % [normal.weapon().display_name, Game.Outcome.keys()[normal.outcome], normal.fight_time, ceili(normal.hero.hp), n_counts[0], n_counts[1], n_counts[2]])
+		normal.queue_free()

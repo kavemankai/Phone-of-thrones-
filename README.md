@@ -1,8 +1,8 @@
 # Shieldwall combat test
 
-A Godot prototype for one question: does fighting melee enemies feel responsive and readable on a phone, with two thumbs? One hero with a choice of four weapons, one small arena, three identical enemies followed by a solo captain. Nothing from the larger Shieldwall game is in here.
+A Godot prototype for one question: does fighting melee enemies feel responsive and readable on a phone, with two thumbs? One hero with a choice of four weapons and an optional shield, one small arena, three identical enemies followed by a solo captain. Nothing from the larger Shieldwall game is in here.
 
-The original brief limited the test to one hero and identical enemies, and listed bosses and combos as out of scope. The weapons and the captain were added later on request, so the "does the core fight work" question is now mixed with "do the extras work". Use 1 Enemy mode with the Sword to test the original question on its own.
+The original brief limited the test to one hero and identical enemies, and listed bosses, combos, blocking, stamina and perfect-timing rewards as out of scope. The weapons, the captain, blocking, the shield, the guard meter and the parry were added later on request, so the "does the core fight work" question is now mixed with "do the extras work". Use 1 Enemy mode with the Sword to test the original question on its own.
 
 The full brief is in [docs/shieldwall_design.md](docs/shieldwall_design.md). Test results are in [TEST_REPORT.md](TEST_REPORT.md).
 
@@ -25,6 +25,7 @@ First open or a fresh clone needs one import pass so the editor learns the class
 | Move | Floating joystick: touch anywhere in the left half of the bottom control band | WASD or arrow keys |
 | Light attack | Tap ATTACK (release in under 0.35 s) | Tap J |
 | Heavy attack | Hold ATTACK for 0.35 s, wait for the yellow HEAVY! cue, release | Hold J, release |
+| Block | BLOCK button (shield icon, above ATTACK): hold to keep the guard up | Hold K |
 | Dodge | DODGE button (diamond). Goes where the stick points, or backwards if the stick is neutral | Space |
 | Start / Retry | Buttons on the panel | Enter |
 
@@ -42,6 +43,24 @@ Pick one on the start screen. It stays for the whole fight and across Retry. Tap
 | Spear | 10 dmg, reach 95, 30 degrees | 22 dmg, reach 120, 24 degrees, steps 35 forward | Reach and spacing; narrow arcs |
 | Axe | 16 dmg, reach 70, 150 degrees, slower swing | 38 dmg, reach 90, 200 degrees, pushes 60, slowest | Walks at 0.9x, dodge charges return 1.2x slower |
 | Daggers | 6 dmg, reach 45, 80 degrees, very fast | 14 dmg, reach 55, 100 degrees | Walks at 1.1x, 3 dodge charges, 0.8x recharge time |
+
+## Block, shield and parry
+
+Hold BLOCK to raise a guard. It covers an arc in front of you (a faint blue wedge on the ground shows exactly where), and the stick aims it. Hits from inside the arc are blocked; hits from outside it land normally.
+
+| | With shield | Bare weapon |
+| --- | --- | --- |
+| Guard arc | 140 degrees | 100 degrees |
+| Damage that gets through a block | none | 40% |
+| Guard meter | 80 | 40 |
+| Guard lost per blocked point of damage | 1.0 | 1.5 |
+| Parry window | 0.18 s | 0.12 s |
+
+- **Shield**: a toggle on the start screen, for the one-handed weapons (Sword, Spear). Axe and Daggers are two-handed, so the toggle is disabled for them and they use the bare guard. Carrying a shield costs 5% walking speed.
+- **Raising the guard** works from idle, and cancels a charge. It is refused during a swing, while hurt and during a guard break. You walk at 40% speed while blocking and cannot attack until you lower it. Dodge exits a block. After lowering, it cannot go up again for 0.35 s.
+- **Guard meter**: each block drains it. If a block empties it, that hit is still absorbed, then you are stunned for 0.8 s (hits during the stun land) and the meter comes back at half. It refills at 25 per second starting 0.6 s after your last block, only while the guard is down.
+- **Parry**: if a hit arrives within the parry window of raising the guard, it costs nothing and does nothing, and the attacker is staggered for 1.0 s (the captain 0.7 s). Its attack and any combo are cancelled, and your hits do 1.5x damage to it while it is dazed. A parry beats every attack, including the captain's lunge, with or without a shield.
+- **The captain's lunge** costs double guard against a shield, and **breaks a bare-weapon guard**: with no shield the block does nothing and the full 22 lands. Only a parry or a dodge beats it. The slash and both combo hits are ordinary blocks.
 
 ## The fight
 
@@ -87,6 +106,8 @@ Values you are most likely to touch:
 | Hits feel unfair or dodge too strict | `dodge_iframes`, `dodge_duration`, `enemy_lock_time` |
 | Arena feels cramped or empty | `arena_size`, `spawn_axis_dist` (see above) |
 | Captain too hard or too easy | `captain.tres` (HP, attack damage and timings), `captain_heal` |
+| Parry too hard to hit, or too easy | `parry_window_shield`, `parry_window_bare` |
+| Block too strong or too weak | `guard_max_*`, `guard_cost_*`, `block_reduction_*`, `guard_regen`, `guard_break_time` |
 | A weapon feels weak or too strong | its `.tres` damage and timings |
 
 ### Isometric view and arena size
@@ -177,6 +198,9 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - **Aim assist snaps fully to the target** when one is inside the 90-degree cone and the swing's reach.
 - **Dodge passes through enemy bodies.** Walking into an enemy pushes the enemy, not the hero.
 - **The UI is built in code**, not as separate scenes. Only the main, hero and enemy nodes are scenes.
+- **Guard and parry use a meter and a timing window**, not stamina for everything. The parry window is 0.18 s with a shield and 0.12 s bare-handed. On a real phone, touch latency is easily 50 to 100 ms, so these may need widening.
+- **BLOCK is a third right-thumb button**, above ATTACK, radius 52 (the plan said 56; 52 keeps it clear of ATTACK). Holding it means no attacking. If that feels cramped, the fallback is moving it left of DODGE.
+- **The stick aims the guard.** Circling an enemy while blocking turns you away from it; the ground wedge shows where you are covered.
 - **Weapons are fight styles, not just stat swaps**: reach and arc shape, a forward step (spear heavy), movement speed and dodge economy differ. Weapon choice is on the start screen only; there is no mid-fight swap button.
 - **The sword and the grunt are defined by `tuning.tres`** (the brief's table), so the brief's numbers have one source. The other weapons and the captain are separate `.tres` files.
 - **Lunge hit area stays at the start position.** The captain slides forward during the strike, but the wedge is the one drawn at the start of the lunge, so what you saw is what hits.
@@ -188,5 +212,6 @@ Install on a phone: copy the APK over and open it (allow "install unknown apps" 
 - Nothing here has been run on a phone by me. Feel, tap/hold latency, readability and frame rate on a real device are unknown.
 - The tap/hold attack split is a hypothesis. A light attack fires on release, so it is delayed by the finger-down time. If that feels bad, the next experiment is separate light and heavy buttons. It was not changed in advance.
 - Audio is synthesised noise bursts. I could not listen to it, only confirm it plays without errors.
+- Blocking has only been used by a scripted bot, which raises its guard early and still blocks only a few times a fight, because it is usually mid-swing when a strike arrives. That is the intended commitment rule, but whether it feels right to a person is unknown. The bot with the Spear and Shield lost at default health.
 - Balance is a first pass, tested only by a scripted player that never misreads a telegraph. With default health it beat 3 enemies and the captain with every weapon in 12 to 27 s (Spear ended with 14 HP, Daggers 28, Axe 58, Sword 72). A human will be slower and will get hit more. The 30 to 60 s target needs real play.
 - The captain is a bigger version of the same telegraph idea. If the combo or lunge feels unfair in a 340 x 380 arena, tune `captain.tres` first.

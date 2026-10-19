@@ -45,6 +45,7 @@ func _axe() -> Weapon:
 	w.length = 20.0
 	w.thickness = 8.0
 	w.color = Color(0.85, 0.75, 0.55)
+	w.one_handed = false
 	return w
 
 
@@ -61,6 +62,7 @@ func _daggers() -> Weapon:
 	w.length = 14.0
 	w.thickness = 3.0
 	w.dual = true
+	w.one_handed = false
 	w.color = Color(0.8, 0.95, 1.0)
 	return w
 
@@ -76,6 +78,7 @@ func _captain() -> EnemyProfile:
 	p.color = Color(0.55, 0.08, 0.14)
 	p.cap_color = Color(0.95, 0.78, 0.2)
 	p.bar_width = 64.0
+	p.stagger_time = 0.7
 
 	var slash := AttackDef.make("Slash", 18.0, 62.0, 120.0, 0.70, 0.10, 0.60)
 	slash.max_range = 62.0
@@ -90,6 +93,8 @@ func _captain() -> EnemyProfile:
 	lunge.lock_time = 0.30
 	lunge.min_range = 105.0
 	lunge.max_range = 140.0
+	lunge.guard_cost_mult = 2.0
+	lunge.breaks_bare_guard = true
 
 	p.attacks = [slash, combo1, combo2, lunge]
 	p.pattern = PackedInt32Array([3, 0, 1, 0, 1])

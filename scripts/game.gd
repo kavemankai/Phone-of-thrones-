@@ -33,6 +33,8 @@ var outcome: Outcome = Outcome.NONE
 var mode: Mode = Mode.THREE_CAPTAIN
 var weapons: Array[Weapon] = []
 var weapon_index := 0
+## Off-hand shield. Only takes effect with a one-handed weapon.
+var shield_on := false
 var captain_profile: EnemyProfile
 var captain_spawned := false
 ## True during the breather between the last grunt dying and the captain appearing.
@@ -94,6 +96,8 @@ func _ready() -> void:
 	hero.dodged.connect(func(): sfx.play("dodge"))
 	hero.damaged.connect(func(): sfx.play("hurt"))
 	hero.died.connect(func(): sfx.play("hurt"))
+	hero.blocked.connect(func(parried: bool): sfx.play("parry" if parried else "block"))
+	hero.guard_broken.connect(func(): sfx.play("guard_break"))
 
 	var ui := CanvasLayer.new()
 	ui.name = "UI"
@@ -109,7 +113,9 @@ func _ready() -> void:
 	menu = MenuPanel.new()
 	ui.add_child(menu)
 	menu.set_weapons(weapons)
-	menu.fight_requested.connect(func(m: int, w: int): start_fight(m as Mode, w))
+	menu.fight_requested.connect(func(m: int, w: int, sh: bool):
+		shield_on = sh
+		start_fight(m as Mode, w))
 
 	sfx = Sfx.new()
 	add_child(sfx)
@@ -121,6 +127,11 @@ func _ready() -> void:
 
 func weapon() -> Weapon:
 	return weapons[weapon_index]
+
+
+## Weapon name, with the shield when one is actually carried.
+func loadout_name() -> String:
+	return weapon().display_name + (" + Shield" if hero.has_shield else "")
 
 
 func captain_alive() -> bool:
@@ -151,7 +162,7 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	controller.reset()
 	controls.reset()
 	input.clear()
-	hero.set_weapon(weapon())
+	hero.equip(weapon(), shield_on)
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
@@ -168,6 +179,7 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	result_timer = 0.0
 	menu.set_mode(mode)
 	menu.set_weapon(weapon_index)
+	menu.set_shield(shield_on)
 	_set_state(State.FIGHTING)
 
 
@@ -281,7 +293,7 @@ func _process(delta: float) -> void:
 			if result_timer > 0.0:
 				result_timer -= delta
 				if result_timer <= 0.0:
-					menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, weapon().display_name)
+					menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
 
 
 func _poll_keyboard() -> void:
@@ -304,7 +316,13 @@ func _input(event: InputEvent) -> void:
 				input.release_attack(false)
 		elif event.physical_keycode == KEY_SPACE and event.pressed:
 			input.press_dodge()
+		elif event.physical_keycode == KEY_K:
+			if event.pressed:
+				input.press_block(false)
+			else:
+				input.release_block(false)
 	elif event.pressed and event.physical_keycode == KEY_ENTER and menu.visible:
+		shield_on = menu.shield_usable()
 		start_fight(menu.mode as Mode, menu.weapon_index)
 
 

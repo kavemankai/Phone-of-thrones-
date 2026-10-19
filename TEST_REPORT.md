@@ -1,6 +1,6 @@
 # Test report
 
-Build under test: version 0.3.0 (weapons and captain), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
+Build under test: version 0.4.0 (block, shield and parry), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
 Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audio device).
 
 ## Read this first
@@ -15,7 +15,7 @@ Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audi
 | Every script parses | `godot --headless --path . --check-only --script res://<file>` for each file in `scripts/`, `tests/`, `tools/` | No errors (16 files) |
 | Main scene boots | `godot --headless --path . --quit-after 300` | Ran 300 frames, no output, no errors |
 
-## 2. Logic tests (desktop, headless): 204 checks, 0 failed
+## 2. Logic tests (desktop, headless): 299 checks, 0 failed
 
 Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly during development; results are deterministic. Time is stepped by hand with fixed sub-steps, so there is no timing flake.
 
@@ -39,6 +39,14 @@ Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly
 | Captain attacks | 13 | Slash lands 0.70 s after its wedge for 18; combo lands 14 then 20, hit 2 has its own wind-up and lands 0.60 s after hit 1, one commitment for the whole chain; lunge chosen at 125 away, hits a standing hero once for 22, slides the captain about 120, misses a hero who sidesteps after the lock, and is avoided by a dodge started 0.02 s before the strike |
 | Wave and captain flow | 16 | Wave clear starts a breather (no victory), +30 HP capped at 100, dodges refilled, captain appears after 2.0 s at the far end with 150 HP, killing it wins, dying to it loses; 1 Enemy has no captain; Captain only starts with the captain; menu picks weapon and mode; Retry keeps the weapon; choosing the sword restores its stats |
 | Scripted player per weapon | 4 | A full 3 enemies + captain fight is won with each weapon (inflated HP, to prove the flow completes) |
+| Block button, keyboard, layout | 10 | BLOCK sits inside the control band and clear of ATTACK and DODGE; touch raises and lowers the guard; sliding well off lowers it; stick, BLOCK and ATTACK fingers work together; focus loss clears it; K key |
+| Raising and lowering the guard | 23 | Up from idle and from a cancelled charge; refused in wind-up, strike, recovery and hurt, and goes up when those end if still held; dodge exits; attack presses ignored and not queued; 0.35 s re-raise lockout; walking speed 180 / 72 / 171 / 68.4 for bare, bare blocking, shield, shield blocking |
+| Guard arc, damage and cost | 18 | Shield blocks at 69 degrees and not 75, bare at 45 and not 55, nothing from behind; an unblocked hit hurts; shield cost 12 and no damage; bare cost 18 and 4.8 chip; no hurt state or immunity from a block; one enemy strike is one block; the drawn guard wedge equals the block test (every degree, both guards) |
+| Guard break and regen | 9 | An emptying block is still absorbed, then 0.8 s stun with no actions, hits land during it, guard returns at 50%; no regen for 0.6 s after a block, then 25/s; none while the guard is held |
+| Parry | 14 | Inside the window: no damage, no guard cost, slot released, attacker dazed 1.0 s (captain 0.7 s), x1.5 damage to it, 0.35 s gap afterwards; 0.30 s early is a normal block; 0.15 s early parries with a shield (window 0.18) but not bare-handed (0.12); parrying combo hit 1 cancels hit 2 |
+| Captain vs a guard | 6 | Lunge vs shield: blocked, 44 of 80 guard; lunge vs bare guard: full 22, guard untouched; a parry beats the lunge both ways; bare slash gives 7.2 chip and 27 guard; both combo hits blocked by a shield |
+| Shield equipment | 11 | Sword and Spear one-handed, Axe and Daggers not; shield numbers with the sword; a shield with the axe is ignored; menu toggle enabled and disabled correctly and remembered; starting with a shield equips it; Retry keeps it and restores guard; "Sword + Shield" label |
+| Scripted blocking player | 4 | Sword + Shield and Spear + Shield beat 3 enemies and the captain with inflated HP, and the runs really used blocks or parries |
 | Multi-touch and focus | 13 | Stick, Attack and Dodge fingers work at the same time, each released independently; dragging off Attack cancels it and the later lift fires nothing; touches in dead zones ignored; focus loss clears stick, attack and finger tracking; disabled controls ignore touch |
 | Touch to hero | 5 | Tap on Attack gives a light swing, hold-release a heavy, stick moves the hero at 180 px/s, Dodge button dodges |
 | Commitment limit | 4 | Over 40 s with an idle hero (100,000 HP) never more than 2 enemies in wind-up/strike/recovery; two do attack together; the third visibly waits; killing a committed enemy frees its slot |
@@ -47,7 +55,9 @@ Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly
 
 How the touch tests work: they build `InputEventScreenTouch` and `InputEventScreenDrag` events with different finger indices and feed them to the real `TouchControls` handler. This proves the code tracks fingers separately. It does not prove Android delivers events the same way, or that two thumbs on glass behave.
 
-How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 1.6 s (88 of 100 HP left). Against 3 enemies and the captain with default health it won with every weapon: Sword 14.9 s (72 HP left), Spear 27.4 s (14 left), Axe 12.1 s (58 left), Daggers 16.6 s (28 left). The bot dodges every locked strike with correct timing, which people will not, so these are lower bounds on difficulty. That shows the fight can be won and the maths works. It says almost nothing about difficulty for a person, and it suggests a fight with these numbers is much shorter than the 30 to 60 s target.
+How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 1.6 s (88 of 100 HP left). Against 3 enemies and the captain with default health it won with every weapon: Sword 14.9 s (72 HP left), Spear 27.4 s (14 left), Axe 12.1 s (58 left), Daggers 16.6 s (28 left). The bot dodges every locked strike with correct timing, which people will not, so these are lower bounds on difficulty.
+
+A second bot raises its guard in the last 0.28 s of a strike that covers it. With a shield and default health, Sword won in 12.9 s with 42 HP left (2 blocks, 2 parries, no guard break). Spear lost after 16.9 s (1 block, no parries). Both bots block only a few times a fight because they are usually mid-swing when a strike arrives, so they say little about how blocking plays for a person. That shows the fight can be won and the maths works. It says almost nothing about difficulty for a person, and it suggests a fight with these numbers is much shorter than the 30 to 60 s target.
 
 One bug found by the tests along the way: my first bot left its attack button held after dodging out of a charge, which stalled it for 120 s. The game itself was fine (a held button after a dodge does not auto-attack, as specified); the bot now lifts its "finger" like a player would.
 
@@ -55,10 +65,11 @@ One bug found by the tests along the way: my first bot left its attack button he
 
 Command: `xvfb-run -a godot --path . --rendering-driver opengl3 --resolution 720x1280 --script tools/capture_screens.gd -- <dir>`
 
-I looked at screenshots of: the start panel (weapon row, mode row), fight start, a locked grunt wedge, heavy-ready charge, each weapon's heavy swing at its active frame (sword, spear, axe spin, daggers), the captain's lunge, slash, combo hit 1 and combo hit 2 wedges, the "CAPTAIN INCOMING" breather, the touch overlay with the daggers' three dodge pips, and the result panel; plus an earlier fight-start at 810 x 1080 (3:4). Observed: all render and fit at 720 x 1280. Fixes made from these looks: the idle hero showed through the start panel (arena now hidden on the start screen), and an enemy health bar could overflow when HP exceeded max (clamped).
+I looked at screenshots of: the start panel with the shield toggle on (Sword) and disabled (Axe), the shield raised with its guard wedge, the bare-weapon guard, the parry (gold flash, dazed grunt), the guard break (empty meter, dazed hero), the BLOCK button with its guard ring while held alongside the stick, the start panel (weapon row, mode row), fight start, a locked grunt wedge, heavy-ready charge, each weapon's heavy swing at its active frame (sword, spear, axe spin, daggers), the captain's lunge, slash, combo hit 1 and combo hit 2 wedges, the "CAPTAIN INCOMING" breather, the touch overlay with the daggers' three dodge pips, and the result panel; plus an earlier fight-start at 810 x 1080 (3:4). Observed: all render and fit at 720 x 1280. Fixes made from the block looks: the raised shield was small and hid behind the body, so it is larger and always drawn in front; the BLOCK label crowded the ATTACK ring, so it moved inside the button. Fixes made from earlier looks: the idle hero showed through the start panel (arena now hidden on the start screen), and an enemy health bar could overflow when HP exceeded max (clamped).
 
 Known visual weaknesses:
 - A 2:1 diamond uses only about half the screen height in portrait, so there is empty space above and below the arena. Characters are roughly 45 px wide on a 720 px screen (about the literal 1:1 size), smaller than the earlier top-down build.
+- The shield and guard wedge are small on screen at this arena scale; the wedge is the clearest cue and the shield itself is easy to miss, especially when facing away from the camera.
 - The captain is only about 1.4x the grunt's size and is distinguished mostly by colour and a gold cap; the lunge wedge is long and thin and may be hard to judge in the diamond.
 - With three enemies crowded on top of an idle hero, bodies hide each other's wedges. Depth order is by ground x + y and looks right in the shots, but I have not looked at every overlap.
 
@@ -70,7 +81,7 @@ Not checked: real phone screen size and brightness, notches or rounded corners (
 | --- | --- |
 | Export | `godot --headless --path . --export-debug "Android" build/shieldwall-debug.apk` succeeded |
 | Signature | `apksigner verify`: verifies, v2 and v3 schemes, debug certificate (CN=Android Debug) |
-| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.3.0, versionCode 3, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
+| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.4.0, versionCode 4, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
 | Contents | Compiled scripts and scenes, `tuning.res`, icon; arm64 `libgodot_android.so` |
 
 Final APK SHA-256 is printed at the end of the delivery message and can be recomputed with `sha256sum build/shieldwall-debug.apk`. The APK is not committed to git.
@@ -81,7 +92,7 @@ The APK has never been installed or launched, on a phone or an emulator. An APK 
 
 Install the APK, play both modes for several minutes, and note:
 
-- Device model, Android version, build (0.3.0), and whether it holds 60 fps (30 is the floor).
+- Device model, Android version, build (0.4.0), and whether it holds 60 fps (30 is the floor).
 - Do the stick and an action button work at the same time? Any dropped or stuck touches?
 - Did a tap ever turn into a heavy by accident, or a heavy feel delayed? (The tap/hold split is a hypothesis; if it fails, try separate buttons.)
 - Did you miss dodge presses? Does the dodge button sit where your thumb lands?
@@ -90,7 +101,8 @@ Install the APK, play both modes for several minutes, and note:
 - Do you want another attempt after losing?
 - One enemy vs three: if one feels bad, fix controls and combat; if one is good and three are chaotic, fix spacing and attack scheduling (`max_commits`, `enemy_stagger`, `enemy_hover_range`).
 - Is a fight roughly 30 to 60 s? Expect shorter against these numbers.
-- Do the sounds play, and are they tolerable? I could not hear them.
+- Do the sounds play, and are they tolerable? I could not hear them (new: block clank, parry ping, guard-break thud).
+- Block: can you reach BLOCK with the right thumb without losing ATTACK or DODGE? Is the parry window (0.18 s with a shield, 0.12 s bare) too tight or too loose on your phone? Does the stick aiming the guard feel natural, and can you tell where you are covered?
 - Safe area: anything hidden behind a notch or gesture bar?
 
 This prototype does not validate large battles or the commercial game.

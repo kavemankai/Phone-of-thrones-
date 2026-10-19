@@ -50,6 +50,8 @@ lunge = 120.0
 lock_time = 0.3
 min_range = 105.0
 max_range = 140.0
+guard_cost_mult = 2.0
+breaks_bare_guard = true
 
 [resource]
 script = ExtResource("2_efgbt")
@@ -62,5 +64,6 @@ hover_range = 100.0
 color = Color(0.55, 0.08, 0.14, 1)
 cap_color = Color(0.95, 0.78, 0.2, 1)
 bar_width = 64.0
+stagger_time = 0.7
 attacks = Array[ExtResource("1_n5q0y")]([SubResource("Resource_8fsbn"), SubResource("Resource_re6s5"), SubResource("Resource_vtiod"), SubResource("Resource_g2s6m")])
 pattern = PackedInt32Array(3, 0, 1, 0, 1)

@@ -3,18 +3,20 @@ extends Control
 ## Start screen and result screen share one panel: title, weapon and mode selectors and a
 ## primary button. Mode values match Game.Mode (0 one enemy, 1 three then captain, 2 captain).
 
-signal fight_requested(mode: int, weapon_index: int)
+signal fight_requested(mode: int, weapon_index: int, shield: bool)
 
 const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 
 var mode := 1
 var weapon_index := 0
+var shield := false
 
 var _title: Label
 var _info: Label
 var _weapon_desc: Label
 var _fight_button: Button
 var _weapon_row: HBoxContainer
+var _shield_button: Button
 var _weapon_group := ButtonGroup.new()
 var _weapon_buttons: Array[Button] = []
 var _weapons: Array[Weapon] = []
@@ -57,6 +59,20 @@ func _ready() -> void:
 	_weapon_desc.custom_minimum_size = Vector2(600, 64)
 	box.add_child(_weapon_desc)
 
+	_shield_button = Button.new()
+	_shield_button.toggle_mode = true
+	_shield_button.custom_minimum_size = Vector2(320, 70)
+	_shield_button.add_theme_font_size_override("font_size", 28)
+	var shield_on := StyleBoxFlat.new()
+	shield_on.bg_color = Color(0.2, 0.45, 0.85)
+	shield_on.set_corner_radius_all(8)
+	_shield_button.add_theme_stylebox_override("pressed", shield_on)
+	_shield_button.add_theme_stylebox_override("hover_pressed", shield_on)
+	_shield_button.pressed.connect(func(): set_shield(_shield_button.button_pressed))
+	var shield_wrap := CenterContainer.new()
+	shield_wrap.add_child(_shield_button)
+	box.add_child(shield_wrap)
+
 	var mode_label := _label(22)
 	mode_label.text = "FIGHT"
 	mode_label.modulate = Color(1, 1, 1, 0.6)
@@ -80,13 +96,13 @@ func _ready() -> void:
 		sb.bg_color = Color(0.2, 0.62, 0.3) if style_name != "pressed" else Color(0.14, 0.45, 0.22)
 		sb.set_corner_radius_all(10)
 		_fight_button.add_theme_stylebox_override(style_name, sb)
-	_fight_button.pressed.connect(func(): fight_requested.emit(mode, weapon_index))
+	_fight_button.pressed.connect(func(): fight_requested.emit(mode, weapon_index, shield_usable()))
 	var wrap := CenterContainer.new()
 	wrap.add_child(_fight_button)
 	box.add_child(wrap)
 
 	var hint := _label(21)
-	hint.text = "Left thumb: move.  ATTACK: tap = light, hold = heavy.\nDODGE: roll with brief invulnerability.\nDesktop: WASD / arrows, J, Space, Enter."
+	hint.text = "Left thumb: move.  ATTACK: tap = light, hold = heavy.\nBLOCK: hold to guard; raise it just before a hit to parry.\nDODGE: roll with brief invulnerability.\nDesktop: WASD / arrows, J attack, K block, Space dodge, Enter."
 	hint.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(hint)
 
@@ -115,6 +131,29 @@ func set_weapon(i: int) -> void:
 		_weapon_buttons[k].button_pressed = (k == i)
 	if i < _weapons.size():
 		_weapon_desc.text = _weapons[i].description
+	_refresh_shield()
+
+
+func set_shield(on: bool) -> void:
+	shield = on
+	_refresh_shield()
+
+
+## A shield only works with a one-handed weapon.
+func shield_usable() -> bool:
+	return shield and weapon_index < _weapons.size() and _weapons[weapon_index].one_handed
+
+
+func _refresh_shield() -> void:
+	if _shield_button == null:
+		return
+	var one_handed := weapon_index >= _weapons.size() or _weapons[weapon_index].one_handed
+	_shield_button.disabled = not one_handed
+	_shield_button.set_pressed_no_signal(shield and one_handed)
+	if one_handed:
+		_shield_button.text = "Shield: ON" if shield else "Shield: OFF"
+	else:
+		_shield_button.text = "Two-handed: no shield"
 
 
 func set_mode(m: int) -> void:

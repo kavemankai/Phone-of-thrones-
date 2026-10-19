@@ -57,11 +57,21 @@ func _draw() -> void:
 	draw_string(font, Vector2(x + 14.0 + charges * 34.0, y + h + 28.0), "DODGE",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
 
+	# Guard meter: only drawn while it matters.
+	if hero.is_guarding() or hero.guard < hero.guard_max():
+		var gy := y + h + 44.0
+		var gw := 200.0
+		var gfrac := clampf(hero.guard / hero.guard_max(), 0.0, 1.0)
+		draw_rect(Rect2(x, gy, gw, 12.0), Color(0, 0, 0, 0.55))
+		draw_rect(Rect2(x, gy, gw * gfrac, 12.0), Color(0.55, 0.85, 1.0) if gfrac > 0.3 else Color(1.0, 0.5, 0.25))
+		draw_rect(Rect2(x, gy, gw, 12.0), Color(1, 1, 1, 0.5), false, 1.5)
+		draw_string(font, Vector2(x + gw + 10.0, gy + 12.0), "GUARD", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
+
 	var right := size.x - inset_right - 24.0
 	var label := "Captain" if game.captain_alive() else "Enemies: %d" % game.enemies_alive()
 	draw_string(font, Vector2(right - 260.0, y + h - 2.0), label,
 			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color(1.0, 0.8, 0.3) if game.captain_alive() else Color.WHITE)
-	draw_string(font, Vector2(right - 260.0, y + h + 24.0), game.weapon().display_name,
+	draw_string(font, Vector2(right - 260.0, y + h + 24.0), game.loadout_name(),
 			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 20, Color(1, 1, 1, 0.6))
 	if game.intermission_active:
 		var cx := size.x * 0.5

@@ -10,6 +10,8 @@ var touch_move := Vector2.ZERO
 var key_move := Vector2.ZERO
 var attack_touch := false
 var attack_key := false
+var block_touch := false
+var block_key := false
 
 ## One-step flags. The game clears them after every simulation step, so a press the hero
 ## cannot use right now is dropped instead of queued.
@@ -20,6 +22,25 @@ var dodge_pressed := false
 
 func attack_down() -> bool:
 	return attack_touch or attack_key
+
+
+## The guard is a held state, so there are no one-step flags for it.
+func block_down() -> bool:
+	return block_touch or block_key
+
+
+func press_block(from_touch: bool) -> void:
+	if from_touch:
+		block_touch = true
+	else:
+		block_key = true
+
+
+func release_block(from_touch: bool) -> void:
+	if from_touch:
+		block_touch = false
+	else:
+		block_key = false
 
 
 func move_vector() -> Vector2:
@@ -72,4 +93,6 @@ func clear() -> void:
 	key_move = Vector2.ZERO
 	attack_touch = false
 	attack_key = false
+	block_touch = false
+	block_key = false
 	end_step()

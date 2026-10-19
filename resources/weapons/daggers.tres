@@ -37,3 +37,4 @@ length = 14.0
 thickness = 3.0
 color = Color(0.8, 0.95, 1, 1)
 dual = true
+one_handed = false

@@ -1,13 +1,14 @@
 class_name TouchControls
 extends Control
-## On-screen controls. A floating joystick on the left half of the control band, an Attack
-## and a Dodge button on the right. Each finger is tracked by its own touch index, so a
+## On-screen controls. A floating joystick on the left half of the control band; Attack, Dodge
+## and Block buttons on the right. Each finger is tracked by its own touch index, so a
 ## stick and a button can be used at the same moment. Output goes to CombatInput only.
 
 const FORGIVE := 14.0
 const CANCEL_MARGIN := 46.0
 const ATTACK_R := 84.0
 const DODGE_R := 62.0
+const BLOCK_R := 52.0
 
 var input: CombatInput
 var hero: Hero
@@ -19,10 +20,12 @@ var joy_zone := Rect2()
 var joy_hint := Vector2()
 var attack_center := Vector2()
 var dodge_center := Vector2()
+var block_center := Vector2()
 
 var joy_index := -1
 var atk_index := -1
 var dodge_index := -1
+var block_index := -1
 var joy_origin := Vector2()
 
 
@@ -39,6 +42,7 @@ func layout(vp: Vector2, band_h: float, insets: Vector4) -> void:
 	var bottom := vp.y - insets.w
 	attack_center = Vector2(right - 118.0, bottom - 118.0)
 	dodge_center = Vector2(right - 118.0 - 175.0, bottom - 118.0 - 70.0)
+	block_center = Vector2(right - 118.0, bottom - 282.0)
 	joy_zone = Rect2(insets.x, band.position.y, vp.x * 0.5 - insets.x, band_h)
 	joy_hint = Vector2(vp.x * 0.22, bottom - 150.0)
 	queue_redraw()
@@ -54,6 +58,7 @@ func reset() -> void:
 	joy_index = -1
 	atk_index = -1
 	dodge_index = -1
+	block_index = -1
 	if input != null:
 		input.clear()
 	queue_redraw()
@@ -84,6 +89,9 @@ func _touch_down(index: int, p: Vector2) -> void:
 	elif dodge_index == -1 and p.distance_to(dodge_center) <= DODGE_R + FORGIVE:
 		dodge_index = index
 		input.press_dodge()
+	elif block_index == -1 and p.distance_to(block_center) <= BLOCK_R + FORGIVE:
+		block_index = index
+		input.press_block(true)
 	elif joy_index == -1 and joy_zone.has_point(p):
 		joy_index = index
 		joy_origin = p
@@ -96,6 +104,9 @@ func _touch_up(index: int) -> void:
 		input.release_attack(true)
 	elif index == dodge_index:
 		dodge_index = -1
+	elif index == block_index:
+		block_index = -1
+		input.release_block(true)
 	elif index == joy_index:
 		joy_index = -1
 		input.touch_move = Vector2.ZERO
@@ -119,6 +130,11 @@ func _touch_move(index: int, p: Vector2) -> void:
 		if p.distance_to(attack_center) > ATTACK_R + CANCEL_MARGIN:
 			atk_index = -1
 			input.cancel_attack(true)
+	elif index == block_index:
+		# A thumb that slides well off the button lowers the guard.
+		if p.distance_to(block_center) > BLOCK_R + CANCEL_MARGIN:
+			block_index = -1
+			input.release_block(true)
 
 
 func _process(_delta: float) -> void:
@@ -191,3 +207,29 @@ func _draw() -> void:
 				draw_circle(c, 6.0, Color(0.7, 0.9, 1.0))
 			else:
 				draw_arc(c, 6.0, 0.0, TAU, 16, Color(0.7, 0.9, 1.0, 0.6), 2.0)
+	_draw_block_button(font)
+
+
+func _draw_block_button(font: Font) -> void:
+	var held := block_index != -1
+	var guarding := hero != null and hero.is_guarding()
+	var r := BLOCK_R
+	var c := block_center
+	draw_circle(c, r, Color(0.2, 0.3, 0.45, 0.75 if (held or guarding) else 0.5))
+	draw_arc(c, r, 0.0, TAU, 40, Color(1, 1, 1, 0.7), 3.0)
+	# A heater-shield icon, so it reads differently from the round Attack and diamond Dodge.
+	var face := Color(0.85, 0.9, 1.0) if not (hero != null and hero.parry_flash > 0.0) else Color(1.0, 0.85, 0.3)
+	var top := c + Vector2(0, -8)
+	var shield := PackedVector2Array([
+		top + Vector2(-16, -20), top + Vector2(16, -20), top + Vector2(16, 2),
+		top + Vector2(0, 21), top + Vector2(-16, 2)])
+	draw_colored_polygon(shield, face)
+	var outline := shield.duplicate()
+	outline.append(shield[0])
+	draw_polyline(outline, Color(0.1, 0.15, 0.3), 3.0)
+	draw_string(font, c + Vector2(-r, 40.0), "BLOCK", HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, 18, Color.WHITE)
+	if hero != null and (guarding or hero.guard < hero.guard_max()):
+		# Guard meter ring around the button.
+		var frac := clampf(hero.guard / hero.guard_max(), 0.0, 1.0)
+		var col := Color(0.55, 0.85, 1.0) if frac > 0.3 else Color(1.0, 0.5, 0.25)
+		draw_arc(c, r + 8.0, -PI * 0.5, -PI * 0.5 + TAU * frac, 40, col, 6.0)

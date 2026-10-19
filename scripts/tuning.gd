@@ -84,6 +84,36 @@ extends Resource
 ## Delay between the last blow and the result panel.
 @export var result_delay: float = 0.6
 
+@export_group("Block, guard and parry")
+## Walking speed while the guard is up.
+@export var block_move_mult: float = 0.4
+## Walking speed multiplier for carrying a shield at all.
+@export var shield_move_mult: float = 0.95
+## Guard arc, centred on facing. A hit from inside it can be blocked.
+@export var block_arc_shield: float = 140.0
+@export var block_arc_bare: float = 100.0
+## Share of a blocked hit's damage that is stopped (1 = all, 0.6 = 60%).
+@export var block_reduction_shield: float = 1.0
+@export var block_reduction_bare: float = 0.6
+@export var guard_max_shield: float = 80.0
+@export var guard_max_bare: float = 40.0
+## Guard lost per point of blocked damage.
+@export var guard_cost_shield: float = 1.0
+@export var guard_cost_bare: float = 1.5
+## Guard refills at this rate, starting this long after the last block, while not blocking.
+@export var guard_regen: float = 25.0
+@export var guard_regen_delay: float = 0.6
+## Stun after the guard breaks, and the guard share restored once it ends.
+@export var guard_break_time: float = 0.8
+@export var guard_break_refill: float = 0.5
+## A hit this soon after raising the guard is a parry: no damage, no guard cost, attacker staggered.
+@export var parry_window_shield: float = 0.18
+@export var parry_window_bare: float = 0.12
+## After lowering the guard it cannot be raised again for this long.
+@export var block_reraise_delay: float = 0.35
+## Damage multiplier against an enemy staggered by a parry.
+@export var stagger_damage_mult: float = 1.5
+
 @export_group("Captain finale")
 ## Pause between the last grunt dying and the captain appearing.
 @export var captain_intro_time: float = 2.0

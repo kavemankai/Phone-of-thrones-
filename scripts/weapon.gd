@@ -19,6 +19,8 @@ extends Resource
 @export var thickness := 4.0
 @export var color := Color(0.9, 0.93, 1.0)
 @export var dual := false
+## Two-handed weapons cannot be paired with a shield.
+@export var one_handed := true
 
 
 ## The dictionary shape the hero uses while an attack plays.

@@ -6,7 +6,7 @@ extends Node2D
 ## What it can do comes from its EnemyProfile: the grunt has one strike, the captain has a
 ## pattern of slash, combo and lunge.
 
-enum State { APPROACH, POSITION, WINDUP, ACTIVE, RECOVER, DEAD }
+enum State { APPROACH, POSITION, WINDUP, ACTIVE, RECOVER, DEAD, STAGGER }
 
 signal damaged(knocked_back: bool)
 signal struck
@@ -66,6 +66,20 @@ func is_captain() -> bool:
 	return profile != null and profile.id == "captain"
 
 
+## A parry cancels whatever the enemy was doing and leaves it dazed and open.
+func stagger() -> void:
+	if state == State.DEAD:
+		return
+	controller.release(self)
+	hit_done = true
+	locked = false
+	_enter(State.STAGGER)
+
+
+func is_staggered() -> bool:
+	return state == State.STAGGER
+
+
 ## Wind-up, strike and recovery: the enemy holds its ground and cannot be shoved by others.
 func is_committed() -> bool:
 	return state == State.WINDUP or state == State.ACTIVE or state == State.RECOVER
@@ -74,6 +88,8 @@ func is_committed() -> bool:
 func take_hit(damage: float, from: Vector2, knockback: float) -> void:
 	if state == State.DEAD:
 		return
+	if state == State.STAGGER:
+		damage *= tuning.stagger_damage_mult
 	hp -= damage
 	flash = 0.12
 	if knockback > 0.0:
@@ -110,6 +126,10 @@ func step(dt: float) -> void:
 			_slide(dt)
 			if state_time >= cur.active:
 				_enter(State.RECOVER)
+		State.STAGGER:
+			if state_time >= profile.stagger_time:
+				cooldown = tuning.enemy_attack_gap
+				_enter(State.POSITION)
 		State.RECOVER:
 			if state_time >= cur.recover:
 				if cur.chain_to >= 0:
@@ -199,8 +219,12 @@ func _try_hit() -> void:
 		return
 	if HitShapes.circle_in_sector(attack_origin, attack_dir, cur.reach, cur.arc_deg,
 			hero.position, hero.radius):
-		if hero.take_hit(cur.damage):
-			hit_done = true
+		var result := hero.receive_attack(cur.damage, attack_origin, cur)
+		if result == Hero.HitResult.NONE:
+			return  # dodge i-frames or immunity: the strike may still connect next step
+		hit_done = true
+		if result == Hero.HitResult.PARRIED:
+			stagger()
 
 
 func _process(delta: float) -> void:
@@ -231,6 +255,12 @@ func _draw() -> void:
 	var height := radius * 2.0
 	var side := Color(1, 1, 1) if flash > 0.0 else profile.color
 	Iso.draw_cylinder(self, radius, height, side, profile.color.darkened(0.7))
+	if state == State.STAGGER:
+		# Dazed: stars circling the head.
+		var t := Time.get_ticks_msec() * 0.008
+		for i in 3:
+			var a := t + i * TAU / 3.0
+			draw_circle(Vector2(0.0, -height - 8.0) + Vector2(cos(a), sin(a) * 0.4) * radius * 0.9, 3.5, Color(1.0, 0.9, 0.3))
 	if profile.cap_color.a > 0.0:
 		var rx := radius * Iso.RX * 0.7
 		var ry := radius * Iso.RY * 0.7
