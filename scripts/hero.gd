@@ -16,6 +16,7 @@ const BODY_COLOR := Color(0.25, 0.55, 1.0)
 const FLASH_COLOR := Color(1, 1, 1)
 
 var tuning: Tuning
+var weapon: Weapon
 var input: CombatInput
 var arena_size := Vector2(340, 380)
 
@@ -41,7 +42,34 @@ func setup(t: Tuning, inp: CombatInput, arena: Vector2) -> void:
 	input = inp
 	arena_size = arena
 	radius = t.hero_radius
+	weapon = Weapon.sword_from(t)
 	reset(t.hero_spawn())
+
+
+func set_weapon(w: Weapon) -> void:
+	weapon = w
+
+
+## Weapon-adjusted numbers. Everything else about the hero comes straight from Tuning.
+func max_charges() -> int:
+	return tuning.dodge_max_charges + weapon.extra_dodge_charges
+
+
+func recharge_time() -> float:
+	return tuning.dodge_recharge * weapon.dodge_recharge_mult
+
+
+func move_speed() -> float:
+	return tuning.hero_speed * weapon.move_mult
+
+
+## The breather before the captain: some health back and a full set of dodges.
+func restore(heal: float) -> void:
+	if state == State.DEAD:
+		return
+	hp = minf(tuning.hero_max_hp, hp + heal)
+	dodge_charges = max_charges()
+	dodge_recharge_t = 0.0
 
 
 func reset(pos: Vector2) -> void:
@@ -52,7 +80,7 @@ func reset(pos: Vector2) -> void:
 	facing = Vector2.UP
 	charge_time = 0.0
 	immune_time = 0.0
-	dodge_charges = tuning.dodge_max_charges
+	dodge_charges = max_charges()
 	dodge_recharge_t = 0.0
 	dodge_dir = Vector2.ZERO
 	cur_attack = {}
@@ -83,9 +111,9 @@ func is_heavy_ready() -> bool:
 
 ## Seconds until the next dodge charge returns; 0 when full.
 func dodge_recharge_left() -> float:
-	if dodge_charges >= tuning.dodge_max_charges:
+	if dodge_charges >= max_charges():
 		return 0.0
-	return tuning.dodge_recharge - dodge_recharge_t
+	return recharge_time() - dodge_recharge_t
 
 
 func step(dt: float, enemies: Array) -> void:
@@ -113,6 +141,9 @@ func step(dt: float, enemies: Array) -> void:
 				swung.emit(cur_attack.heavy)
 				_apply_hits()
 		State.ACTIVE:
+			var lunge: float = cur_attack.get("lunge", 0.0)
+			if lunge > 0.0:
+				position = _clamp_to_arena(position + facing * (lunge / cur_attack.active) * dt)
 			_apply_hits()
 			if state_time >= cur_attack.active:
 				_enter(State.RECOVER)
@@ -166,7 +197,7 @@ func _step_charging(dt: float) -> void:
 
 
 func _start_attack(heavy: bool) -> void:
-	cur_attack = tuning.attack_data(heavy)
+	cur_attack = weapon.attack_data(heavy)
 	charge_time = 0.0
 	_aim_assist()
 	hit_ids = {}
@@ -212,7 +243,7 @@ func _try_dodge() -> bool:
 		return false
 	var v := input.move_vector()
 	dodge_dir = v.normalized() if v.length() > 0.2 else -facing
-	if dodge_charges >= tuning.dodge_max_charges:
+	if dodge_charges >= max_charges():
 		dodge_recharge_t = 0.0
 	dodge_charges -= 1
 	charge_time = 0.0
@@ -231,19 +262,19 @@ func _step_dodge(dt: float) -> void:
 
 
 func _recharge_dodge(dt: float) -> void:
-	if dodge_charges >= tuning.dodge_max_charges:
+	if dodge_charges >= max_charges():
 		dodge_recharge_t = 0.0
 		return
 	dodge_recharge_t += dt
-	if dodge_recharge_t + EPS >= tuning.dodge_recharge:
+	if dodge_recharge_t + EPS >= recharge_time():
 		dodge_charges += 1
-		dodge_recharge_t = maxf(0.0, dodge_recharge_t - tuning.dodge_recharge)
+		dodge_recharge_t = maxf(0.0, dodge_recharge_t - recharge_time())
 
 
 func _move(dt: float, mult: float) -> void:
 	var v := input.move_vector()
 	if v.length() > 0.001:
-		position += v * tuning.hero_speed * mult * dt
+		position += v * move_speed() * mult * dt
 		facing = v.normalized()
 		position = _clamp_to_arena(position)
 
@@ -313,8 +344,8 @@ func _draw() -> void:
 func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 	var base := facing.angle()
 	var ang := base + 0.6
-	var length := radius + 22.0
-	var width := 4.0
+	var length := radius + weapon.length
+	var width := weapon.thickness
 	if attacking:
 		var half := deg_to_rad(cur_attack.arc) * 0.5
 		ang = base
@@ -326,9 +357,11 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 			State.RECOVER:
 				ang = base + half
 		if cur_attack.heavy:
-			length = radius + 30.0
-			width = 6.0
-	var dir := Vector2.from_angle(ang)
+			length += 8.0
+			width += 2.0
+	var angles: Array = [ang - 0.35, ang + 0.35] if weapon.dual else [ang]
 	var anchor := Vector2(0.0, -anchor_height)
-	draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * length,
-			Color(0.9, 0.93, 1.0), width)
+	for blade_angle in angles:
+		var dir := Vector2.from_angle(blade_angle)
+		draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * length,
+				weapon.color, width)

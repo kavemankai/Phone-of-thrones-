@@ -1,6 +1,6 @@
 # Test report
 
-Build under test: version 0.2.0 (isometric), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
+Build under test: version 0.3.0 (weapons and captain), Godot 4.6.2-stable (`71f334935`), Compatibility renderer.
 Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audio device).
 
 ## Read this first
@@ -15,7 +15,7 @@ Run date: 19 October 2026, in a Linux cloud container (no GPU, no phone, no audi
 | Every script parses | `godot --headless --path . --check-only --script res://<file>` for each file in `scripts/`, `tests/`, `tools/` | No errors (16 files) |
 | Main scene boots | `godot --headless --path . --quit-after 300` | Ran 300 frames, no output, no errors |
 
-## 2. Logic tests (desktop, headless): 122 checks, 0 failed
+## 2. Logic tests (desktop, headless): 204 checks, 0 failed
 
 Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly during development; results are deterministic. Time is stepped by hand with fixed sub-steps, so there is no timing flake.
 
@@ -33,15 +33,21 @@ Command: `godot --headless --path . --script tests/run_tests.gd`. Run repeatedly
 | Enemy hits once | 1 | With post-hit immunity set to 0, one strike still causes exactly one hit |
 | Dodge vs strike | 2 | Standing still takes 12; dodging into the strike at 0.60 s of wind-up takes 0 |
 | Isometric view | 13 | Projection round trip; ground (1,1) is screen-down; a projected wedge contains exactly the projected hit area; stick up goes straight up the screen at 180 ground px/s, stick right goes straight right; dodge follows the mapped direction (90 ground px); the game enables the mapping; all spawns are inside the arena, outside melee range and enemies start above the hero on screen; all four arena corners fit above the control band at 720 x 1280; scene tree is ArenaRoot > IsoLayer > characters |
+| Weapon and captain data | 14 | Four weapons load in order; sword equals the design table; spear, axe, daggers and captain values equal the specified numbers; pattern is lunge, slash, combo, slash, combo; the lunge is chosen from afar and skipped up close |
+| Weapon mechanics | 22 | For each weapon: light hits once for its damage, a target just past reach is missed, heavy deals its damage and pushes by its knockback; a target 100 away is hit by the spear and not the sword; axe spin hits 95 degrees off axis and the sword heavy does not; daggers start with 3 dodges and recharge in 1.12 s; axe needs 1.68 s; walking speeds 162 / 198 / 180; spear heavy steps 35 forward |
+| Every attack shape | 12 | Drawn wedge equals hit area for all 8 weapon attacks and the captain's 4 attacks, at two facings |
+| Captain attacks | 13 | Slash lands 0.70 s after its wedge for 18; combo lands 14 then 20, hit 2 has its own wind-up and lands 0.60 s after hit 1, one commitment for the whole chain; lunge chosen at 125 away, hits a standing hero once for 22, slides the captain about 120, misses a hero who sidesteps after the lock, and is avoided by a dodge started 0.02 s before the strike |
+| Wave and captain flow | 16 | Wave clear starts a breather (no victory), +30 HP capped at 100, dodges refilled, captain appears after 2.0 s at the far end with 150 HP, killing it wins, dying to it loses; 1 Enemy has no captain; Captain only starts with the captain; menu picks weapon and mode; Retry keeps the weapon; choosing the sword restores its stats |
+| Scripted player per weapon | 4 | A full 3 enemies + captain fight is won with each weapon (inflated HP, to prove the flow completes) |
 | Multi-touch and focus | 13 | Stick, Attack and Dodge fingers work at the same time, each released independently; dragging off Attack cancels it and the later lift fires nothing; touches in dead zones ignored; focus loss clears stick, attack and finger tracking; disabled controls ignore touch |
 | Touch to hero | 5 | Tap on Attack gives a light swing, hold-release a heavy, stick moves the hero at 180 px/s, Dodge button dodges |
 | Commitment limit | 4 | Over 40 s with an idle hero (100,000 HP) never more than 2 enemies in wind-up/strike/recovery; two do attack together; the third visibly waits; killing a committed enemy frees its slot |
-| Full fights | 6 | Scripted player beats 1 enemy and 3 enemies; idle player dies; hero and last enemy both down gives DEFEAT; a same-step strike and killing blow gives DEFEAT |
-| Retry | 7 | After 10 dirtied cycles in each mode, the whole state (hero, enemies, timers, input, commitments, finger tracking) equals a fresh start; Retry from the result screen works; focus loss through the Game node clears input |
+| Full fights | 5 | Scripted player beats 1 enemy; idle player dies against the grunts; hero and last enemy both down gives DEFEAT; a same-step strike and killing blow gives DEFEAT |
+| Retry | 9 | After 10 dirtied cycles in each of the three modes, the whole state (hero, enemies, timers, input, commitments, finger tracking, weapon, breather and captain flags) equals a fresh start; Retry from the result screen works; focus loss through the Game node clears input |
 
 How the touch tests work: they build `InputEventScreenTouch` and `InputEventScreenDrag` events with different finger indices and feed them to the real `TouchControls` handler. This proves the code tracks fingers separately. It does not prove Android delivers events the same way, or that two thumbs on glass behave.
 
-How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 1.6 s (88 of 100 HP left) and 3 enemies in 4.8 s (64 left). That shows the fight can be won and the maths works. It says almost nothing about difficulty for a person, and it suggests a fight with these numbers is much shorter than the 30 to 60 s target.
+How the "scripted player" works: a small bot in the test file walks to the nearest enemy, taps attack in range and dodges locked strikes. It beat 1 enemy in 1.6 s (88 of 100 HP left). Against 3 enemies and the captain with default health it won with every weapon: Sword 14.9 s (72 HP left), Spear 27.4 s (14 left), Axe 12.1 s (58 left), Daggers 16.6 s (28 left). The bot dodges every locked strike with correct timing, which people will not, so these are lower bounds on difficulty. That shows the fight can be won and the maths works. It says almost nothing about difficulty for a person, and it suggests a fight with these numbers is much shorter than the 30 to 60 s target.
 
 One bug found by the tests along the way: my first bot left its attack button held after dodging out of a charge, which stalled it for 120 s. The game itself was fine (a held button after a dodge does not auto-attack, as specified); the bot now lifts its "finger" like a player would.
 
@@ -49,13 +55,14 @@ One bug found by the tests along the way: my first bot left its attack button he
 
 Command: `xvfb-run -a godot --path . --rendering-driver opengl3 --resolution 720x1280 --script tools/capture_screens.gd -- <dir>`
 
-I looked at screenshots of: start panel, fight start, a locked enemy wedge, heavy-ready charge (yellow ring on the ground and HEAVY! on the button), a heavy swing arc, the touch overlay with stick and Attack held (stick up-right moved the hero up-right on screen), and the result panel; plus fight-start at 810 x 1080 (3:4). Observed: the diamond arena, cylinder characters, projected wedges and the control band all render and fit.
+I looked at screenshots of: the start panel (weapon row, mode row), fight start, a locked grunt wedge, heavy-ready charge, each weapon's heavy swing at its active frame (sword, spear, axe spin, daggers), the captain's lunge, slash, combo hit 1 and combo hit 2 wedges, the "CAPTAIN INCOMING" breather, the touch overlay with the daggers' three dodge pips, and the result panel; plus an earlier fight-start at 810 x 1080 (3:4). Observed: all render and fit at 720 x 1280. Fixes made from these looks: the idle hero showed through the start panel (arena now hidden on the start screen), and an enemy health bar could overflow when HP exceeded max (clamped).
 
 Known visual weaknesses:
 - A 2:1 diamond uses only about half the screen height in portrait, so there is empty space above and below the arena. Characters are roughly 45 px wide on a 720 px screen (about the literal 1:1 size), smaller than the earlier top-down build.
+- The captain is only about 1.4x the grunt's size and is distinguished mostly by colour and a gold cap; the lunge wedge is long and thin and may be hard to judge in the diamond.
 - With three enemies crowded on top of an idle hero, bodies hide each other's wedges. Depth order is by ground x + y and looks right in the shots, but I have not looked at every overlap.
 
-Not checked: real phone screen size and brightness, notches or rounded corners (safe-area code exists but ran only with zero insets on desktop), colour-blind readability, the 20:9 ratio in the isometric build (the 720 x 1600 layout is covered only by the corner-fit check at 720 x 1280).
+Not checked: real phone screen size and brightness, notches or rounded corners (safe-area code exists but ran only with zero insets on desktop), colour-blind readability, the 20:9 ratio and the 810 x 1080 shape for this iteration's new start panel (only 720 x 1280 was looked at) (the 720 x 1600 layout is covered only by the corner-fit check at 720 x 1280).
 
 ## 4. Android build
 
@@ -63,7 +70,7 @@ Not checked: real phone screen size and brightness, notches or rounded corners (
 | --- | --- |
 | Export | `godot --headless --path . --export-debug "Android" build/shieldwall-debug.apk` succeeded |
 | Signature | `apksigner verify`: verifies, v2 and v3 schemes, debug certificate (CN=Android Debug) |
-| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.2.0, versionCode 2, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
+| Manifest | `aapt dump badging`: package `com.phoneofthrones.shieldwall`, versionName 0.3.0, versionCode 3, minSdk 24, targetSdk 35, native code `arm64-v8a` only, `screenOrientation` portrait, debuggable |
 | Contents | Compiled scripts and scenes, `tuning.res`, icon; arm64 `libgodot_android.so` |
 
 Final APK SHA-256 is printed at the end of the delivery message and can be recomputed with `sha256sum build/shieldwall-debug.apk`. The APK is not committed to git.
@@ -74,7 +81,7 @@ The APK has never been installed or launched, on a phone or an emulator. An APK 
 
 Install the APK, play both modes for several minutes, and note:
 
-- Device model, Android version, build (0.2.0), and whether it holds 60 fps (30 is the floor).
+- Device model, Android version, build (0.3.0), and whether it holds 60 fps (30 is the floor).
 - Do the stick and an action button work at the same time? Any dropped or stuck touches?
 - Did a tap ever turn into a heavy by accident, or a heavy feel delayed? (The tap/hold split is a hypothesis; if it fails, try separate buttons.)
 - Did you miss dodge presses? Does the dodge button sit where your thumb lands?

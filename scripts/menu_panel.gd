@@ -1,22 +1,30 @@
 class_name MenuPanel
 extends Control
-## Start screen and result screen share one panel: title, mode selector and a primary button.
+## Start screen and result screen share one panel: title, weapon and mode selectors and a
+## primary button. Mode values match Game.Mode (0 one enemy, 1 three then captain, 2 captain).
 
-signal fight_requested(enemy_count: int)
+signal fight_requested(mode: int, weapon_index: int)
 
-var enemy_count := 3
+const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
+
+var mode := 1
+var weapon_index := 0
 
 var _title: Label
 var _info: Label
+var _weapon_desc: Label
 var _fight_button: Button
-var _one_button: Button
-var _three_button: Button
+var _weapon_row: HBoxContainer
+var _weapon_group := ButtonGroup.new()
+var _weapon_buttons: Array[Button] = []
+var _weapons: Array[Weapon] = []
+var _mode_buttons: Array[Button] = []
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.65)
+	dim.color = Color(0, 0, 0, 0.7)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -26,27 +34,43 @@ func _ready() -> void:
 	add_child(center)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 26)
+	box.add_theme_constant_override("separation", 18)
 	center.add_child(box)
 
 	_title = _label(56)
 	box.add_child(_title)
-	_info = _label(28)
+	_info = _label(26)
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_info.custom_minimum_size = Vector2(560, 0)
+	_info.custom_minimum_size = Vector2(600, 0)
 	box.add_child(_info)
 
-	var group := ButtonGroup.new()
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 20)
-	box.add_child(row)
-	_one_button = _mode_button("1 Enemy", group)
-	_three_button = _mode_button("3 Enemies", group)
-	row.add_child(_one_button)
-	row.add_child(_three_button)
-	_one_button.pressed.connect(func(): enemy_count = 1)
-	_three_button.pressed.connect(func(): enemy_count = 3)
+	var weapon_label := _label(22)
+	weapon_label.text = "WEAPON"
+	weapon_label.modulate = Color(1, 1, 1, 0.6)
+	box.add_child(weapon_label)
+	_weapon_row = HBoxContainer.new()
+	_weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_weapon_row.add_theme_constant_override("separation", 12)
+	box.add_child(_weapon_row)
+	_weapon_desc = _label(24)
+	_weapon_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_weapon_desc.custom_minimum_size = Vector2(600, 64)
+	box.add_child(_weapon_desc)
+
+	var mode_label := _label(22)
+	mode_label.text = "FIGHT"
+	mode_label.modulate = Color(1, 1, 1, 0.6)
+	box.add_child(mode_label)
+	var mode_group := ButtonGroup.new()
+	var mode_row := HBoxContainer.new()
+	mode_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	mode_row.add_theme_constant_override("separation", 12)
+	box.add_child(mode_row)
+	for i in MODE_NAMES.size():
+		var b := _toggle(MODE_NAMES[i], mode_group, Vector2(200, 84))
+		b.pressed.connect(func(): mode = i)
+		mode_row.add_child(b)
+		_mode_buttons.append(b)
 
 	_fight_button = Button.new()
 	_fight_button.custom_minimum_size = Vector2(360, 110)
@@ -56,39 +80,63 @@ func _ready() -> void:
 		sb.bg_color = Color(0.2, 0.62, 0.3) if style_name != "pressed" else Color(0.14, 0.45, 0.22)
 		sb.set_corner_radius_all(10)
 		_fight_button.add_theme_stylebox_override(style_name, sb)
-	_fight_button.pressed.connect(func(): fight_requested.emit(enemy_count))
+	_fight_button.pressed.connect(func(): fight_requested.emit(mode, weapon_index))
 	var wrap := CenterContainer.new()
 	wrap.add_child(_fight_button)
 	box.add_child(wrap)
 
-	var hint := _label(22)
-	hint.text = "Left thumb: move.  ATTACK: tap = light, hold = heavy.\nDODGE: roll with brief invulnerability.\nDesktop: WASD / arrows, J, Space."
+	var hint := _label(21)
+	hint.text = "Left thumb: move.  ATTACK: tap = light, hold = heavy.\nDODGE: roll with brief invulnerability.\nDesktop: WASD / arrows, J, Space, Enter."
 	hint.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(hint)
 
-	set_mode(enemy_count)
+	set_mode(mode)
 	show_start()
 
 
-func set_mode(n: int) -> void:
-	enemy_count = n
-	_one_button.button_pressed = (n == 1)
-	_three_button.button_pressed = (n == 3)
+## Builds the weapon buttons. Call once after the panel is in the tree.
+func set_weapons(list: Array[Weapon]) -> void:
+	_weapons = list
+	for b in _weapon_buttons:
+		b.queue_free()
+	_weapon_buttons.clear()
+	for i in list.size():
+		var b := _toggle(list[i].display_name, _weapon_group, Vector2(146, 84))
+		b.add_theme_font_size_override("font_size", 28)
+		b.pressed.connect(func(): set_weapon(i))
+		_weapon_row.add_child(b)
+		_weapon_buttons.append(b)
+	set_weapon(weapon_index)
+
+
+func set_weapon(i: int) -> void:
+	weapon_index = i
+	for k in _weapon_buttons.size():
+		_weapon_buttons[k].button_pressed = (k == i)
+	if i < _weapons.size():
+		_weapon_desc.text = _weapons[i].description
+
+
+func set_mode(m: int) -> void:
+	mode = m
+	for k in _mode_buttons.size():
+		_mode_buttons[k].button_pressed = (k == m)
 
 
 func show_start() -> void:
 	_title.text = "SHIELDWALL"
-	_info.text = "Combat test: one hero against melee enemies."
+	_title.modulate = Color.WHITE
+	_info.text = "Combat test: pick a weapon, then fight."
 	_fight_button.text = "Fight"
 	visible = true
 
 
-func show_result(victory: bool, seconds: float, hp_left: float, mode: int) -> void:
+func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_name: String) -> void:
 	_title.text = "VICTORY" if victory else "DEFEAT"
 	_title.modulate = Color(0.5, 1.0, 0.55) if victory else Color(1.0, 0.4, 0.35)
-	_info.text = "%d enemy mode.  Time %.1f s.  Health left %d." % [mode, seconds, ceili(hp_left)]
+	_info.text = "%s, %s.  Time %.1f s.  Health left %d." % [weapon_name, MODE_NAMES[m], seconds, ceili(hp_left)]
 	_fight_button.text = "Retry"
-	set_mode(mode)
+	set_mode(m)
 	visible = true
 
 
@@ -104,13 +152,13 @@ func _label(font_size: int) -> Label:
 	return l
 
 
-func _mode_button(text: String, group: ButtonGroup) -> Button:
+func _toggle(text: String, group: ButtonGroup, min_size: Vector2) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.toggle_mode = true
 	b.button_group = group
-	b.custom_minimum_size = Vector2(240, 90)
-	b.add_theme_font_size_override("font_size", 34)
+	b.custom_minimum_size = min_size
+	b.add_theme_font_size_override("font_size", 28)
 	var on := StyleBoxFlat.new()
 	on.bg_color = Color(0.2, 0.45, 0.85)
 	on.set_corner_radius_all(8)

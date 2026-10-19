@@ -1,0 +1,66 @@
+[gd_resource type="Resource" script_class="EnemyProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/attack_def.gd" id="1_n5q0y"]
+[ext_resource type="Script" path="res://scripts/enemy_profile.gd" id="2_efgbt"]
+
+[sub_resource type="Resource" id="Resource_8fsbn"]
+script = ExtResource("1_n5q0y")
+label = "Slash"
+damage = 18.0
+reach = 62.0
+arc_deg = 120.0
+windup = 0.7
+active = 0.1
+recover = 0.6
+max_range = 62.0
+
+[sub_resource type="Resource" id="Resource_re6s5"]
+script = ExtResource("1_n5q0y")
+label = "Combo 1"
+damage = 14.0
+reach = 58.0
+arc_deg = 110.0
+windup = 0.55
+active = 0.1
+recover = 0.12
+max_range = 62.0
+chain_to = 2
+
+[sub_resource type="Resource" id="Resource_vtiod"]
+script = ExtResource("1_n5q0y")
+label = "Combo 2"
+damage = 20.0
+reach = 66.0
+arc_deg = 130.0
+windup = 0.38
+active = 0.1
+recover = 0.8
+lock_time = 0.18
+
+[sub_resource type="Resource" id="Resource_g2s6m"]
+script = ExtResource("1_n5q0y")
+label = "Lunge"
+damage = 22.0
+reach = 150.0
+arc_deg = 28.0
+windup = 0.8
+active = 0.12
+recover = 0.9
+lunge = 120.0
+lock_time = 0.3
+min_range = 105.0
+max_range = 140.0
+
+[resource]
+script = ExtResource("2_efgbt")
+id = "captain"
+display_name = "Captain"
+max_hp = 150.0
+speed = 95.0
+radius = 22.0
+hover_range = 100.0
+color = Color(0.55, 0.08, 0.14, 1)
+cap_color = Color(0.95, 0.78, 0.2, 1)
+bar_width = 64.0
+attacks = Array[ExtResource("1_n5q0y")]([SubResource("Resource_8fsbn"), SubResource("Resource_re6s5"), SubResource("Resource_vtiod"), SubResource("Resource_g2s6m")])
+pattern = PackedInt32Array(3, 0, 1, 0, 1)

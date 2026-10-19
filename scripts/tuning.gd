@@ -84,6 +84,12 @@ extends Resource
 ## Delay between the last blow and the result panel.
 @export var result_delay: float = 0.6
 
+@export_group("Captain finale")
+## Pause between the last grunt dying and the captain appearing.
+@export var captain_intro_time: float = 2.0
+## Health restored during that pause (dodge charges are refilled too).
+@export var captain_heal: float = 30.0
+
 
 func attack_data(heavy: bool) -> Dictionary:
 	if heavy:
@@ -96,6 +102,7 @@ func attack_data(heavy: bool) -> Dictionary:
 			"active": heavy_active,
 			"recover": heavy_recover,
 			"knockback": heavy_knockback,
+			"lunge": 0.0,
 		}
 	return {
 		"heavy": false,
@@ -106,6 +113,7 @@ func attack_data(heavy: bool) -> Dictionary:
 		"active": light_active,
 		"recover": light_recover,
 		"knockback": 0.0,
+		"lunge": 0.0,
 	}
 
 

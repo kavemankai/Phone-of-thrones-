@@ -44,19 +44,28 @@ func _draw() -> void:
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
 
 	# Dodge charges.
-	for i in t.dodge_max_charges:
+	var charges := hero.max_charges()
+	for i in charges:
 		var c := Vector2(x + 14.0 + i * 34.0, y + h + 22.0)
 		if i < hero.dodge_charges:
 			draw_circle(c, 11.0, Color(0.45, 0.75, 1.0))
 		else:
 			draw_arc(c, 11.0, 0.0, TAU, 20, Color(0.45, 0.75, 1.0, 0.6), 3.0)
 			if i == hero.dodge_charges:
-				var p := hero.dodge_recharge_t / t.dodge_recharge
+				var p := hero.dodge_recharge_t / hero.recharge_time()
 				draw_arc(c, 11.0, -PI * 0.5, -PI * 0.5 + TAU * p, 20, Color(0.45, 0.75, 1.0), 4.0)
-	draw_string(font, Vector2(x + 14.0 + t.dodge_max_charges * 34.0, y + h + 28.0), "DODGE",
+	draw_string(font, Vector2(x + 14.0 + charges * 34.0, y + h + 28.0), "DODGE",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
 
 	var right := size.x - inset_right - 24.0
-	var remaining := game.enemies_alive()
-	draw_string(font, Vector2(right - 260.0, y + h - 2.0), "Enemies: %d" % remaining,
-			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color.WHITE)
+	var label := "Captain" if game.captain_alive() else "Enemies: %d" % game.enemies_alive()
+	draw_string(font, Vector2(right - 260.0, y + h - 2.0), label,
+			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color(1.0, 0.8, 0.3) if game.captain_alive() else Color.WHITE)
+	draw_string(font, Vector2(right - 260.0, y + h + 24.0), game.weapon().display_name,
+			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 20, Color(1, 1, 1, 0.6))
+	if game.intermission_active:
+		var cx := size.x * 0.5
+		draw_string(font, Vector2(cx - 300.0, 210.0), "CAPTAIN INCOMING", HORIZONTAL_ALIGNMENT_CENTER,
+				600.0, 52, Color(1.0, 0.8, 0.3))
+		draw_string(font, Vector2(cx - 300.0, 252.0), "+%d health, dodges restored" % int(t.captain_heal),
+				HORIZONTAL_ALIGNMENT_CENTER, 600.0, 24, Color(0.7, 1.0, 0.7))

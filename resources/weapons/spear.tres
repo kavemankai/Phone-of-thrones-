@@ -1,0 +1,36 @@
+[gd_resource type="Resource" script_class="Weapon" format=3]
+
+[ext_resource type="Script" path="res://scripts/attack_def.gd" id="1_u7l32"]
+[ext_resource type="Script" path="res://scripts/weapon.gd" id="2_17uv3"]
+
+[sub_resource type="Resource" id="Resource_oqcxr"]
+script = ExtResource("1_u7l32")
+label = "Lunge"
+damage = 22.0
+reach = 120.0
+arc_deg = 24.0
+windup = 0.22
+active = 0.1
+recover = 0.45
+lunge = 35.0
+
+[sub_resource type="Resource" id="Resource_udw87"]
+script = ExtResource("1_u7l32")
+label = "Thrust"
+damage = 10.0
+reach = 95.0
+arc_deg = 30.0
+windup = 0.12
+active = 0.08
+recover = 0.26
+
+[resource]
+script = ExtResource("2_17uv3")
+id = "spear"
+display_name = "Spear"
+description = "Reach. Long narrow thrusts keep you out of range; the heavy lunges forward."
+light = SubResource("Resource_udw87")
+heavy = SubResource("Resource_oqcxr")
+length = 46.0
+thickness = 3.0
+color = Color(0.95, 0.9, 0.7, 1)

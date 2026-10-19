@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="Weapon" format=3]
+
+[ext_resource type="Script" path="res://scripts/attack_def.gd" id="1_tmw6g"]
+[ext_resource type="Script" path="res://scripts/weapon.gd" id="2_n7tsm"]
+
+[sub_resource type="Resource" id="Resource_er75v"]
+script = ExtResource("1_tmw6g")
+label = "Flurry"
+damage = 14.0
+reach = 55.0
+arc_deg = 100.0
+windup = 0.1
+active = 0.08
+recover = 0.22
+
+[sub_resource type="Resource" id="Resource_e3pt0"]
+script = ExtResource("1_tmw6g")
+label = "Stab"
+damage = 6.0
+reach = 45.0
+arc_deg = 80.0
+windup = 0.05
+active = 0.06
+recover = 0.12
+
+[resource]
+script = ExtResource("2_n7tsm")
+id = "daggers"
+display_name = "Daggers"
+description = "Speed. Very fast, short stabs. Faster walking, three dodges and quicker recharge."
+light = SubResource("Resource_e3pt0")
+heavy = SubResource("Resource_er75v")
+move_mult = 1.1
+extra_dodge_charges = 1
+dodge_recharge_mult = 0.8
+length = 14.0
+thickness = 3.0
+color = Color(0.8, 0.95, 1, 1)
+dual = true

@@ -1,8 +1,10 @@
 class_name Enemy
 extends Node2D
 ## A melee enemy. States: approach, position (hover and wait), wind-up, active strike,
-## recover, dead. It stands still from wind-up through recovery, and commits to an attack
-## only after the EncounterController grants it a slot.
+## recover, dead. It stands still from wind-up through recovery (a lunge slides it during
+## the strike), and commits to an attack only after the EncounterController grants a slot.
+## What it can do comes from its EnemyProfile: the grunt has one strike, the captain has a
+## pattern of slash, combo and lunge.
 
 enum State { APPROACH, POSITION, WINDUP, ACTIVE, RECOVER, DEAD }
 
@@ -10,9 +12,8 @@ signal damaged(knocked_back: bool)
 signal struck
 signal died
 
-const BODY_COLOR := Color(0.88, 0.2, 0.2)
-
 var tuning: Tuning
+var profile: EnemyProfile
 var controller: EncounterController
 var hero: Hero
 var arena_size := Vector2(340, 380)
@@ -24,6 +25,12 @@ var state_time := 0.0
 var hp := 30.0
 var facing := Vector2.DOWN
 var attack_dir := Vector2.DOWN
+## The attack being wound up, struck or recovered from.
+var cur: AttackDef
+## Where the current attack started. The hit area is the wedge from here, even while a
+## lunge slides the enemy forward.
+var attack_origin := Vector2.ZERO
+var pattern_pos := 0
 var locked := false
 var hit_done := false
 var cooldown := 0.0
@@ -32,14 +39,18 @@ var flash := 0.0
 var fade := 0.0
 
 
-func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: int) -> void:
+func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: int,
+		prof: EnemyProfile = null) -> void:
 	tuning = t
 	controller = ctrl
 	hero = h
 	arena_size = arena
 	index = idx
-	radius = t.enemy_radius
-	hp = t.enemy_max_hp
+	profile = prof if prof != null else EnemyProfile.grunt_from(t)
+	radius = profile.radius
+	hp = profile.max_hp
+	cur = profile.attacks[0]
+	pattern_pos = 0
 	cooldown = t.enemy_stagger * idx
 	strafe_sign = 1.0 if idx % 2 == 0 else -1.0
 	state = State.APPROACH
@@ -49,6 +60,10 @@ func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: i
 
 func is_dead() -> bool:
 	return state == State.DEAD
+
+
+func is_captain() -> bool:
+	return profile != null and profile.id == "captain"
 
 
 ## Wind-up, strike and recovery: the enemy holds its ground and cannot be shoved by others.
@@ -92,13 +107,20 @@ func step(dt: float) -> void:
 			_step_windup()
 		State.ACTIVE:
 			_try_hit()
-			if state_time >= tuning.enemy_active:
+			_slide(dt)
+			if state_time >= cur.active:
 				_enter(State.RECOVER)
 		State.RECOVER:
-			if state_time >= tuning.enemy_recover:
-				controller.release(self)
-				cooldown = tuning.enemy_attack_gap
-				_enter(State.POSITION)
+			if state_time >= cur.recover:
+				if cur.chain_to >= 0:
+					# Combo: straight into the next telegraphed attack, same commitment.
+					if not hero.is_dead():
+						facing = _dir_to_hero()
+					_begin_attack(profile.attacks[cur.chain_to])
+				else:
+					controller.release(self)
+					cooldown = tuning.enemy_attack_gap
+					_enter(State.POSITION)
 
 
 func _enter(s: State) -> void:
@@ -111,6 +133,15 @@ func _dir_to_hero() -> Vector2:
 	return d.normalized() if d.length() > 0.001 else facing
 
 
+func _begin_attack(atk: AttackDef) -> void:
+	cur = atk
+	locked = false
+	hit_done = false
+	attack_dir = facing
+	attack_origin = position
+	_enter(State.WINDUP)
+
+
 func _step_free(dt: float) -> void:
 	if hero.is_dead():
 		return
@@ -118,14 +149,15 @@ func _step_free(dt: float) -> void:
 	var dist := to_hero.length()
 	var dir := _dir_to_hero()
 	facing = dir
+	var next_pos := profile.choose(dist, pattern_pos)
+	var next := profile.attack_at(next_pos)
 	var wants_in := cooldown <= 0.0 and controller.has_slot(self)
-	if wants_in and dist <= tuning.enemy_engage_range and controller.try_commit(self):
-		locked = false
-		hit_done = false
-		attack_dir = facing
-		_enter(State.WINDUP)
+	if wants_in and dist >= next.min_range and dist <= next.max_range \
+			and controller.try_commit(self):
+		pattern_pos = next_pos + 1
+		_begin_attack(next)
 		return
-	var hover := tuning.enemy_hover_range
+	var hover := profile.hover_range
 	if wants_in or dist > hover + 6.0:
 		state = State.APPROACH
 		_move(dir, 1.0, dt)
@@ -138,11 +170,11 @@ func _step_free(dt: float) -> void:
 
 
 func _move(dir: Vector2, mult: float, dt: float) -> void:
-	position = clamp_to_arena(position + dir * tuning.enemy_speed * mult * dt)
+	position = clamp_to_arena(position + dir * profile.speed * mult * dt)
 
 
 func _step_windup() -> void:
-	var lock_at := tuning.enemy_windup - tuning.enemy_lock_time
+	var lock_at := cur.windup - cur.lock_time
 	if state_time < lock_at:
 		if not hero.is_dead():
 			facing = _dir_to_hero()
@@ -150,18 +182,24 @@ func _step_windup() -> void:
 	elif not locked:
 		locked = true
 		attack_dir = facing
-	if state_time >= tuning.enemy_windup:
+	if state_time >= cur.windup:
 		_enter(State.ACTIVE)
+		attack_origin = position
 		struck.emit()
 		_try_hit()
+
+
+func _slide(dt: float) -> void:
+	if cur.lunge > 0.0:
+		position = clamp_to_arena(position + attack_dir * (cur.lunge / cur.active) * dt)
 
 
 func _try_hit() -> void:
 	if hit_done:
 		return
-	if HitShapes.circle_in_sector(position, attack_dir, tuning.enemy_reach,
-			tuning.enemy_arc_deg, hero.position, hero.radius):
-		if hero.take_hit(tuning.enemy_damage):
+	if HitShapes.circle_in_sector(attack_origin, attack_dir, cur.reach, cur.arc_deg,
+			hero.position, hero.radius):
+		if hero.take_hit(cur.damage):
 			hit_done = true
 
 
@@ -191,8 +229,12 @@ func _draw() -> void:
 	# Upright pass.
 	draw_set_transform_matrix(Iso.upright())
 	var height := radius * 2.0
-	var side := Color(1, 1, 1) if flash > 0.0 else BODY_COLOR
-	Iso.draw_cylinder(self, radius, height, side, Color(0.3, 0.02, 0.02))
+	var side := Color(1, 1, 1) if flash > 0.0 else profile.color
+	Iso.draw_cylinder(self, radius, height, side, profile.color.darkened(0.7))
+	if profile.cap_color.a > 0.0:
+		var rx := radius * Iso.RX * 0.7
+		var ry := radius * Iso.RY * 0.7
+		draw_colored_polygon(Iso.ellipse(Vector2(0.0, -height), rx, ry), profile.cap_color)
 	var f := attack_dir if (state == State.WINDUP or state == State.ACTIVE) else facing
 	var top := Vector2(0.0, -height)
 	var tip := top + Iso.to_screen(f) * radius * 0.8
@@ -200,21 +242,31 @@ func _draw() -> void:
 	draw_circle(tip, 3.0, Color(1, 1, 1))
 	_draw_weapon(f, height * 0.55)
 	# Health bar above the head.
-	var w := 36.0
+	var w := profile.bar_width
 	var bar := Vector2(-w * 0.5, -height - 16.0)
 	draw_rect(Rect2(bar, Vector2(w, 5.0)), Color(0, 0, 0, 0.6))
-	draw_rect(Rect2(bar, Vector2(w * hp / tuning.enemy_max_hp, 5.0)), Color(0.9, 0.25, 0.25))
+	draw_rect(Rect2(bar, Vector2(w * clampf(hp / profile.max_hp, 0.0, 1.0), 5.0)), Color(0.9, 0.25, 0.25))
+
+
+func _wedge_polygon() -> PackedVector2Array:
+	var poly := HitShapes.sector_polygon(attack_dir, cur.reach, cur.arc_deg)
+	if state == State.ACTIVE:
+		# The wedge stays where the attack started even if the enemy lunges out of it.
+		var offset := attack_origin - position
+		for i in poly.size():
+			poly[i] += offset
+	return poly
 
 
 func _draw_telegraph() -> void:
-	var poly := HitShapes.sector_polygon(attack_dir, tuning.enemy_reach, tuning.enemy_arc_deg)
+	var poly := _wedge_polygon()
 	var outline := poly.duplicate()
 	outline.append(poly[0])
 	if state == State.ACTIVE:
 		draw_colored_polygon(poly, Color(1.0, 0.95, 0.9, 0.85))
 		draw_polyline(outline, Color(1, 0.2, 0.1), 3.0)
 		return
-	var p := clampf(state_time / tuning.enemy_windup, 0.0, 1.0)
+	var p := clampf(state_time / cur.windup, 0.0, 1.0)
 	if locked:
 		# Direction is fixed: solid red, step away to avoid it.
 		draw_colored_polygon(poly, Color(1.0, 0.1, 0.05, 0.35 + 0.3 * p))
@@ -225,14 +277,14 @@ func _draw_telegraph() -> void:
 
 
 func _draw_weapon(f: Vector2, anchor_height: float) -> void:
-	var half := deg_to_rad(tuning.enemy_arc_deg) * 0.5
+	var half := deg_to_rad(cur.arc_deg) * 0.5
 	var base := f.angle()
 	var ang := base + 0.8
 	match state:
 		State.WINDUP:
-			ang = base - half * clampf(state_time / tuning.enemy_windup, 0.0, 1.0)
+			ang = base - half * clampf(state_time / cur.windup, 0.0, 1.0)
 		State.ACTIVE:
-			ang = base + lerpf(-half, half, clampf(state_time / tuning.enemy_active, 0.0, 1.0))
+			ang = base + lerpf(-half, half, clampf(state_time / cur.active, 0.0, 1.0))
 		State.RECOVER:
 			ang = base + half
 	var dir := Vector2.from_angle(ang)

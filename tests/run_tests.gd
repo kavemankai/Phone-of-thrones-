@@ -40,10 +40,14 @@ class Rig:
 		hero.hit_landed.connect(func(_e, _h): hits += 1)
 		hero.damaged.connect(func(): hurts += 1)
 
-	func add_enemy(pos: Vector2, idx := 0) -> Enemy:
+	func use_weapon(w: Weapon) -> void:
+		hero.set_weapon(w)
+		hero.reset(hero.position)
+
+	func add_enemy(pos: Vector2, idx := 0, prof: EnemyProfile = null) -> Enemy:
 		var e := Enemy.new()
 		host.add_child(e)
-		e.setup(t, ctrl, hero, t.arena_size, idx)
+		e.setup(t, ctrl, hero, t.arena_size, idx, prof)
 		e.position = pos
 		enemies.append(e)
 		return e
@@ -119,6 +123,12 @@ func _initialize() -> void:
 	test_commitment_limit()
 	test_full_fights()
 	test_retry_resets_everything()
+	test_weapon_and_captain_data()
+	test_weapon_mechanics()
+	test_all_attack_shapes()
+	test_captain_attacks()
+	test_captain_flow()
+	test_scripted_player_per_weapon()
 	print("\n%d passed, %d failed" % [passes, fails])
 	quit(fails)
 
@@ -139,7 +149,7 @@ func test_tuning_matches_design() -> void:
 		"enemy_windup": 0.65, "enemy_active": 0.10, "enemy_recover": 0.65,
 		"enemy_attack_gap": 0.35, "enemy_lock_time": 0.25, "max_commits": 2,
 		"hurt_duration": 0.15, "hit_immunity": 0.35, "aim_cone_deg": 90.0,
-		"half_speed_mult": 0.5,
+		"half_speed_mult": 0.5, "captain_heal": 30.0, "captain_intro_time": 2.0,
 	}
 	for k in expect:
 		if not is_equal_approx(float(T.get(k)), float(expect[k])):
@@ -710,7 +720,7 @@ func test_isometric_view() -> void:
 
 	var g := make_game()
 	check("the game turns the isometric stick mapping on", g.input.iso_view)
-	g.start_fight(3)
+	g.start_fight(Game.Mode.THREE_CAPTAIN)
 	var a := g.tuning.arena_size
 	var spawns_ok := true
 	var min_gap := INF
@@ -759,8 +769,8 @@ func nearest_alive(g: Game) -> Enemy:
 	return best
 
 
-## A simple scripted player: walk to the nearest enemy, tap-attack in range, sidestep-dodge
-## a locked strike. Deterministic, no randomness.
+## A simple scripted player: walk to the nearest enemy, tap-attack at the weapon's range and
+## sidestep-dodge a locked strike. Deterministic, no randomness.
 func bot(g: Game) -> void:
 	var h := g.hero
 	var target := nearest_alive(g)
@@ -768,21 +778,24 @@ func bot(g: Game) -> void:
 		g.input.key_move = Vector2.ZERO
 		return
 	var to := target.position - h.position
-	g.input.key_move = to.normalized() if to.length() > 54.0 else to.normalized() * 0.05
+	var want: float = h.weapon.light.reach * 0.85
+	g.input.key_move = to.normalized() if to.length() > want else to.normalized() * 0.05
 	# A dodge cancels a charge but the "finger" is still down: lift it, as a player would.
 	if h.state == Hero.State.IDLE and g.input.attack_down():
 		g.input.release_attack(false)
 	for e in g.enemies:
 		if e.is_dead() or e.state != Enemy.State.WINDUP or not e.locked:
 			continue
-		var left: float = g.tuning.enemy_windup - e.state_time
-		if left <= 0.10 and h.dodge_charges > 0 and h.state in [Hero.State.IDLE, Hero.State.CHARGING, Hero.State.RECOVER]:
-			if HitShapes.circle_in_sector(e.position, e.attack_dir, g.tuning.enemy_reach,
-					g.tuning.enemy_arc_deg, h.position, h.radius):
+		var left: float = e.cur.windup - e.state_time
+		# Start late enough that the i-frames (0.16 s) still cover the whole strike.
+		if left <= maxf(0.02, 0.15 - e.cur.active) and h.dodge_charges > 0 \
+				and h.state in [Hero.State.IDLE, Hero.State.CHARGING, Hero.State.RECOVER]:
+			if HitShapes.circle_in_sector(e.attack_origin, e.attack_dir, e.cur.reach,
+					e.cur.arc_deg, h.position, h.radius):
 				g.input.key_move = e.attack_dir.orthogonal()
 				g.input.press_dodge()
 				return
-	if h.state == Hero.State.IDLE and to.length() <= 60.0:
+	if h.state == Hero.State.IDLE and to.length() <= want + 4.0:
 		g.input.press_attack(false)
 	elif h.state == Hero.State.CHARGING:
 		g.input.release_attack(false)
@@ -802,7 +815,7 @@ func test_commitment_limit() -> void:
 	section("At most two enemies commit to an attack at once")
 	var g := make_game()
 	g.tuning.hero_max_hp = 100000.0
-	g.start_fight(3)
+	g.start_fight(Game.Mode.THREE_CAPTAIN)
 	var peak_states := 0
 	var waiting_while_two := false
 	var steps := 0
@@ -840,23 +853,15 @@ func test_commitment_limit() -> void:
 func test_full_fights() -> void:
 	section("Full fights: victory, defeat and result priority")
 	var one := make_game()
-	one.start_fight(1)
+	one.start_fight(Game.Mode.ONE)
 	play(one, 90.0, true)
 	check("1 enemy: scripted hero wins", one.state == Game.State.RESULT and one.outcome == Game.Outcome.VICTORY,
 			"outcome=%s t=%.1f hp=%s" % [one.outcome, one.fight_time, one.hero.hp])
 	print("        (1 enemy bot win: %.1f s, hero hp %d)" % [one.fight_time, ceili(one.hero.hp)])
 	one.queue_free()
 
-	var three := make_game()
-	three.start_fight(3)
-	play(three, 120.0, true)
-	check("3 enemies: scripted hero wins with default tuning", three.outcome == Game.Outcome.VICTORY,
-			"outcome=%s t=%.1f hp=%s alive=%d" % [three.outcome, three.fight_time, three.hero.hp, three.enemies_alive()])
-	print("        (3 enemy bot result: %s in %.1f s, hero hp %d)" % [three.outcome, three.fight_time, ceili(three.hero.hp)])
-	three.queue_free()
-
 	var idle := make_game()
-	idle.start_fight(3)
+	idle.start_fight(Game.Mode.THREE_CAPTAIN)
 	play(idle, 90.0, false)
 	check("hero can die: idle hero is defeated", idle.state == Game.State.RESULT and idle.outcome == Game.Outcome.DEFEAT,
 			"outcome=%s hp=%s" % [idle.outcome, idle.hero.hp])
@@ -865,7 +870,7 @@ func test_full_fights() -> void:
 
 	# Defeat takes priority when both sides are down.
 	var tie := make_game()
-	tie.start_fight(1)
+	tie.start_fight(Game.Mode.ONE)
 	tie.hero.hp = 0.0
 	tie.hero.state = Hero.State.DEAD
 	for e in tie.enemies:
@@ -876,7 +881,7 @@ func test_full_fights() -> void:
 
 	# Same-step trade: enemy strike and killing blow in one step.
 	var trade := make_game()
-	trade.start_fight(1)
+	trade.start_fight(Game.Mode.ONE)
 	var e := trade.enemies[0] as Enemy
 	var mid := trade.tuning.arena_size.x * 0.5
 	e.position = Vector2(mid, 250)
@@ -889,6 +894,7 @@ func test_full_fights() -> void:
 	trade.hero.state = Hero.State.ACTIVE
 	trade.hero.state_time = 0.0
 	e.attack_dir = Vector2.DOWN
+	e.attack_origin = e.position
 	e.hit_done = false
 	e.locked = true
 	e.state = Enemy.State.ACTIVE
@@ -914,7 +920,8 @@ func snapshot(g: Game) -> Dictionary:
 				g.hero.immune_time, g.hero.dodge_charges, g.hero.dodge_recharge_t, g.hero.facing,
 				g.hero.cur_attack.size(), g.hero.hit_ids.size()],
 		"enemies": es, "enemy_nodes": enemy_nodes, "commits": g.controller.count(),
-		"peak": g.controller.peak,
+		"peak": g.controller.peak, "mode": g.mode, "weapon": g.hero.weapon.id,
+		"captain": [g.captain_spawned, g.intermission_active, g.intermission_left],
 		"input": [g.input.touch_move, g.input.key_move, g.input.attack_touch, g.input.attack_key,
 				g.input.attack_pressed, g.input.attack_released, g.input.dodge_pressed],
 		"controls": [g.controls.joy_index, g.controls.atk_index, g.controls.dodge_index],
@@ -924,7 +931,8 @@ func snapshot(g: Game) -> Dictionary:
 func test_retry_resets_everything() -> void:
 	section("Retry resets all state (10 cycles per mode)")
 	var g := make_game()
-	for mode in [3, 1]:
+	var expected := {Game.Mode.THREE_CAPTAIN: 3, Game.Mode.ONE: 1, Game.Mode.CAPTAIN_ONLY: 1}
+	for mode in expected:
 		g.start_fight(mode)
 		var baseline := snapshot(g)
 		var identical := true
@@ -940,16 +948,397 @@ func test_retry_resets_everything() -> void:
 			if snapshot(g) != baseline:
 				identical = false
 				print("      first difference on cycle ", i)
-		check("%d-enemy mode: state after every Retry equals a fresh start" % mode, identical)
-		check("%d-enemy mode: exactly %d enemies exist after Retry" % [mode, mode], g.enemies.size() == mode and baseline.enemy_nodes == mode)
+		check("%s: state after every Retry equals a fresh start" % Game.Mode.keys()[mode], identical)
+		check("%s: exactly %d enemies exist after Retry" % [Game.Mode.keys()[mode], expected[mode]],
+				g.enemies.size() == expected[mode] and baseline.enemy_nodes == expected[mode])
 
 	# Retry from the result screen, via the menu button signal.
-	g.start_fight(3)
+	g.start_fight(Game.Mode.THREE_CAPTAIN)
 	g.hero.take_hit(1000.0)
 	g.step(1.0 / 60.0)
 	check("defeat moves to the result state", g.state == Game.State.RESULT)
-	g.menu.fight_requested.emit(1)
+	g.menu.fight_requested.emit(Game.Mode.ONE, 0)
 	check("Retry from the result screen starts a new 1-enemy fight", g.state == Game.State.FIGHTING and g.enemies.size() == 1 and g.hero.hp == g.tuning.hero_max_hp and not g.hero.is_dead())
 	g.notification(Node.NOTIFICATION_APPLICATION_FOCUS_OUT)
 	check("focus loss through the Game node clears held input", not g.input.attack_down() and g.input.touch_move == Vector2.ZERO)
 	g.queue_free()
+
+
+func attack_tuple(a: AttackDef) -> Array:
+	return [a.damage, a.reach, a.arc_deg, a.windup, a.active, a.recover, a.knockback, a.lunge]
+
+
+func tuple_close(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if not is_equal_approx(float(a[i]), float(b[i])):
+			return false
+	return true
+
+
+func test_weapon_and_captain_data() -> void:
+	section("Weapon and captain data")
+	var g := make_game()
+	var ids := []
+	for w in g.weapons:
+		ids.append(w.id)
+	check("four weapons: sword, spear, axe, daggers", ids == ["sword", "spear", "axe", "daggers"], str(ids))
+	var sword: Weapon = g.weapons[0]
+	check("sword light equals the design table", tuple_close(attack_tuple(sword.light), [10, 65, 90, 0.10, 0.08, 0.22, 0, 0]))
+	check("sword heavy equals the design table", tuple_close(attack_tuple(sword.heavy), [25, 85, 140, 0.15, 0.10, 0.40, 35, 0]))
+	var spear: Weapon = g.weapons[1]
+	check("spear light/heavy values", tuple_close(attack_tuple(spear.light), [10, 95, 30, 0.12, 0.08, 0.26, 0, 0]) and tuple_close(attack_tuple(spear.heavy), [22, 120, 24, 0.22, 0.10, 0.45, 0, 35]))
+	var axe: Weapon = g.weapons[2]
+	check("axe light/heavy values", tuple_close(attack_tuple(axe.light), [16, 70, 150, 0.22, 0.10, 0.38, 0, 0]) and tuple_close(attack_tuple(axe.heavy), [38, 90, 200, 0.35, 0.14, 0.60, 60, 0]))
+	check("axe moves at 0.9x and recharges dodges 1.2x slower", is_equal_approx(axe.move_mult, 0.9) and is_equal_approx(axe.dodge_recharge_mult, 1.2))
+	var daggers: Weapon = g.weapons[3]
+	check("daggers light/heavy values", tuple_close(attack_tuple(daggers.light), [6, 45, 80, 0.05, 0.06, 0.12, 0, 0]) and tuple_close(attack_tuple(daggers.heavy), [14, 55, 100, 0.10, 0.08, 0.22, 0, 0]))
+	check("daggers: 1.1x speed, one extra dodge, 0.8x recharge", is_equal_approx(daggers.move_mult, 1.1) and daggers.extra_dodge_charges == 1 and is_equal_approx(daggers.dodge_recharge_mult, 0.8))
+	var cap: EnemyProfile = g.captain_profile
+	check("captain loaded: 150 HP, radius 22, speed 95", cap != null and cap.id == "captain" and is_equal_approx(cap.max_hp, 150.0) and is_equal_approx(cap.radius, 22.0) and is_equal_approx(cap.speed, 95.0))
+	check("captain has slash, two combo hits and a lunge", cap.attacks.size() == 4 and cap.attacks[1].chain_to == 2 and cap.attacks[2].chain_to == -1)
+	check("captain attack values", tuple_close(attack_tuple(cap.attacks[0]), [18, 62, 120, 0.70, 0.10, 0.60, 0, 0]) and tuple_close(attack_tuple(cap.attacks[1]), [14, 58, 110, 0.55, 0.10, 0.12, 0, 0]) and tuple_close(attack_tuple(cap.attacks[2]), [20, 66, 130, 0.38, 0.10, 0.80, 0, 0]) and tuple_close(attack_tuple(cap.attacks[3]), [22, 150, 28, 0.80, 0.12, 0.90, 0, 120]))
+	check("captain pattern is lunge, slash, combo, slash, combo", cap.pattern == PackedInt32Array([3, 0, 1, 0, 1]))
+	check("pattern picks the lunge from afar and skips it up close", cap.choose(200.0, 0) == 0 and cap.choose(60.0, 0) == 1)
+	var order := []
+	var pos := 1
+	for i in 4:
+		order.append(cap.attack_at(pos).label)
+		pos += 1
+	check("up close the captain alternates slash and combo", order == ["Slash", "Combo 1", "Slash", "Combo 1"], str(order))
+	g.queue_free()
+
+
+func weapon_rig(w: Weapon) -> Rig:
+	var r := Rig.new(root, T)
+	r.use_weapon(w)
+	return r
+
+
+func test_weapon_mechanics() -> void:
+	section("Weapon mechanics")
+	var g := make_game()
+	var arena_t := T
+	for w in g.weapons:
+		# Light attack: hits a target in front exactly once, for the weapon's damage.
+		var r := weapon_rig(w)
+		var near := r.add_enemy(r.hero.position + Vector2(0, -w.light.reach * 0.7))
+		near.hp = 1000.0
+		r.input.press_attack(false)
+		r.tick(0.005)
+		r.input.release_attack(false)
+		r.run(1.2)
+		check("%s light: one hit for %d" % [w.display_name, int(w.light.damage)], is_equal_approx(near.hp, 1000.0 - w.light.damage) and r.hits == 1, "hp=%s hits=%d" % [near.hp, r.hits])
+		r.free_all()
+
+		# Beyond reach: no hit.
+		var far := weapon_rig(w)
+		var out := far.add_enemy(far.hero.position + Vector2(0, -(w.light.reach + far.t.enemy_radius + 6.0)))
+		out.hp = 1000.0
+		far.input.press_attack(false)
+		far.tick(0.005)
+		far.input.release_attack(false)
+		far.run(1.2)
+		check("%s light: a target just past reach is not hit" % w.display_name, far.hits == 0)
+		far.free_all()
+
+		# Heavy: damage and knockback match the weapon.
+		var h := weapon_rig(w)
+		var tgt := h.add_enemy(h.hero.position + Vector2(0, -w.heavy.reach * 0.6))
+		tgt.hp = 1000.0
+		var y0 := tgt.position.y
+		h.input.press_attack(false)
+		h.run(0.5, 0.01)
+		h.input.release_attack(false)
+		h.run(1.5)
+		check("%s heavy: one hit for %d, pushed %d" % [w.display_name, int(w.heavy.damage), int(w.heavy.knockback)],
+				is_equal_approx(tgt.hp, 1000.0 - w.heavy.damage) and h.hits == 1 and absf((y0 - tgt.position.y) - w.heavy.knockback) < 0.01,
+				"hp=%s hits=%d moved=%s" % [tgt.hp, h.hits, y0 - tgt.position.y])
+		h.free_all()
+
+	# Reach differences.
+	var spear: Weapon = g.weapons[1]
+	var sword: Weapon = g.weapons[0]
+	var rs := weapon_rig(spear)
+	var es := rs.add_enemy(rs.hero.position + Vector2(0, -100))
+	es.hp = 1000.0
+	rs.input.press_attack(false)
+	rs.tick(0.005)
+	rs.input.release_attack(false)
+	rs.run(1.0)
+	var rw := weapon_rig(sword)
+	var ew := rw.add_enemy(rw.hero.position + Vector2(0, -100))
+	ew.hp = 1000.0
+	rw.input.press_attack(false)
+	rw.tick(0.005)
+	rw.input.release_attack(false)
+	rw.run(1.0)
+	check("a target 100 away is hit by the spear and not by the sword", rs.hits == 1 and rw.hits == 0)
+	rs.free_all()
+	rw.free_all()
+
+	# Axe spin covers 95 degrees off axis; the sword heavy does not.
+	var axe: Weapon = g.weapons[2]
+	for pair in [[axe, 1], [sword, 0]]:
+		var w: Weapon = pair[0]
+		var r := weapon_rig(w)
+		var side := r.add_enemy(r.hero.position + Vector2.UP.rotated(deg_to_rad(95.0)) * 58.0)
+		side.hp = 1000.0
+		r.input.press_attack(false)
+		r.run(0.5, 0.01)
+		r.input.release_attack(false)
+		r.run(1.5)
+		check("%s heavy %s a target 95 degrees off axis" % [w.display_name, "hits" if pair[1] == 1 else "misses"], r.hits == pair[1], "hits=%d" % r.hits)
+		r.free_all()
+
+	# Dodge style.
+	var dg: Weapon = g.weapons[3]
+	var d := weapon_rig(dg)
+	check("daggers start with 3 dodge charges", d.hero.dodge_charges == 3 and d.hero.max_charges() == 3)
+	d.input.press_dodge()
+	d.tick(0.01)
+	var t0 := d.time
+	d.run_until(t0 + 1.05, 0.01)
+	var before := d.hero.dodge_charges
+	d.run_until(t0 + 1.18, 0.01)
+	check("daggers recharge a dodge in 1.12 s (not 1.4)", before == 2 and d.hero.dodge_charges == 3, "before=%d after=%d" % [before, d.hero.dodge_charges])
+	d.free_all()
+	var ax := weapon_rig(axe)
+	ax.input.press_dodge()
+	ax.tick(0.01)
+	var a0 := ax.time
+	ax.run_until(a0 + 1.5, 0.01)
+	var still_low := ax.hero.dodge_charges == 1
+	ax.run_until(a0 + 1.75, 0.01)
+	check("axe needs 1.68 s for a dodge charge (not 1.4)", still_low and ax.hero.dodge_charges == 2)
+	ax.free_all()
+
+	# Movement speed.
+	for pair in [[axe, 162.0], [dg, 198.0], [sword, 180.0]]:
+		var w: Weapon = pair[0]
+		var r := weapon_rig(w)
+		r.hero.position = Vector2(500, 360)
+		r.input.key_move = Vector2(-1, 0)
+		var x0 := r.hero.position.x
+		r.run(1.0, 0.01)
+		check("%s walks at %d px/s" % [w.display_name, int(pair[1])], absf((x0 - r.hero.position.x) - pair[1]) < 1.0, "dx=%s" % (x0 - r.hero.position.x))
+		r.free_all()
+
+	# Spear heavy steps forward during the strike.
+	var sp := weapon_rig(spear)
+	var y_start := sp.hero.position.y
+	sp.input.press_attack(false)
+	sp.run(0.5, 0.01)
+	sp.input.release_attack(false)
+	sp.run(1.5)
+	check("spear heavy lunges 35 forward", absf((y_start - sp.hero.position.y) - 35.0) < 1.0, "dy=%s" % (y_start - sp.hero.position.y))
+	sp.free_all()
+	g.queue_free()
+
+
+func test_all_attack_shapes() -> void:
+	section("Wedge equals hit area for every weapon and captain attack")
+	var g := make_game()
+	var shapes := []
+	for w in g.weapons:
+		shapes.append([w.display_name + " light", w.light.reach, w.light.arc_deg])
+		shapes.append([w.display_name + " heavy", w.heavy.reach, w.heavy.arc_deg])
+	for a in g.captain_profile.attacks:
+		shapes.append(["Captain " + a.label, a.reach, a.arc_deg])
+	for s_ in shapes:
+		var reach: float = s_[1]
+		var arc: float = s_[2]
+		var bad := 0
+		for f in [Vector2.UP, Vector2.RIGHT.rotated(0.7)]:
+			var poly := HitShapes.sector_polygon(f, reach, arc)
+			var x: float = -reach - 20.0
+			while x <= reach + 20.0:
+				var y: float = -reach - 20.0
+				while y <= reach + 20.0:
+					var p := Vector2(x, y)
+					if polygon_edge_distance(poly, p) > 0.6:
+						if Geometry2D.is_point_in_polygon(p, poly) != HitShapes.circle_in_sector(Vector2.ZERO, f, reach, arc, p, 0.0001):
+							bad += 1
+					y += 4.0
+				x += 4.0
+		check("%s: drawn wedge equals hit area" % s_[0], bad == 0, "bad=%d" % bad)
+	g.queue_free()
+
+
+func captain_rig(hero_pos: Vector2, cap_pos: Vector2) -> Array:
+	var cap_profile := load("res://resources/captain.tres") as EnemyProfile
+	var r := Rig.new(root, T, hero_pos)
+	r.run_enemies = true
+	var c := r.add_enemy(cap_pos, 0, cap_profile)
+	return [r, c]
+
+
+func test_captain_attacks() -> void:
+	section("Captain attacks")
+	# Slash: lands one wind-up after the wedge appears.
+	var pair := captain_rig(Vector2(320, 500), Vector2(320, 445))
+	var r: Rig = pair[0]
+	var c: Enemy = pair[1]
+	var wind_start := -1.0
+	var hit_time := -1.0
+	var guard := 0
+	while hit_time < 0.0 and guard < 4000:
+		guard += 1
+		r.tick(0.005)
+		if wind_start < 0.0 and c.state == Enemy.State.WINDUP:
+			wind_start = r.time
+			check("up close the captain opens with the slash", c.cur.label == "Slash")
+		if r.hero.hp < T.hero_max_hp and hit_time < 0.0:
+			hit_time = r.time
+	check("slash lands 0.70 s after its wedge appears", absf((hit_time - wind_start) - 0.70) < 0.02, "gap=%.3f" % (hit_time - wind_start))
+	check("slash deals 18", is_equal_approx(r.hero.hp, 82.0))
+	r.free_all()
+
+	# Combo: two separate telegraphed hits under one commitment.
+	var cp := captain_rig(Vector2(320, 500), Vector2(320, 445))
+	var cr: Rig = cp[0]
+	var cc: Enemy = cp[1]
+	cc.pattern_pos = 2  # the combo entry
+	var hit_times := []
+	var last_hp := cr.hero.hp
+	var seen_second_windup := false
+	var max_commit := 0
+	var steps := 0
+	while steps < 3000 and cc.state != Enemy.State.POSITION or steps == 0:
+		steps += 1
+		cr.tick(0.005)
+		max_commit = maxi(max_commit, cr.ctrl.count())
+		if cr.hero.hp < last_hp:
+			hit_times.append(cr.time)
+			last_hp = cr.hero.hp
+		if cc.cur.label == "Combo 2" and cc.state == Enemy.State.WINDUP:
+			seen_second_windup = true
+	check("combo: both hits land (14 then 20)", cr.hurts == 2 and is_equal_approx(cr.hero.hp, 66.0), "hurts=%d hp=%s" % [cr.hurts, cr.hero.hp])
+	check("combo: the second hit has its own wind-up", seen_second_windup)
+	check("combo: second hit lands 0.60 s after the first", hit_times.size() == 2 and absf((hit_times[1] - hit_times[0]) - 0.60) < 0.02, str(hit_times))
+	check("combo: one commitment for the whole chain, released at the end", max_commit == 1 and cr.ctrl.count() == 0)
+	check("combo: attack gap applies afterwards", is_equal_approx(cc.cooldown, T.enemy_attack_gap) or cc.cooldown <= T.enemy_attack_gap)
+	cr.free_all()
+
+	# Lunge: hit once, slides the captain about 120, and the wedge is the one telegraphed.
+	var lp := captain_rig(Vector2(320, 425), Vector2(320, 300))
+	var lr: Rig = lp[0]
+	var lc: Enemy = lp[1]
+	var origin_y := 300.0
+	var saw_lunge := false
+	steps = 0
+	while steps < 4000 and not (saw_lunge and lc.state == Enemy.State.RECOVER):
+		steps += 1
+		lr.tick(0.005)
+		if lc.state == Enemy.State.WINDUP and lc.cur.label == "Lunge":
+			saw_lunge = true
+	check("at 125 away the captain opens with the lunge", saw_lunge)
+	check("lunge hits a hero standing in its path once for 22", lr.hurts == 1 and is_equal_approx(lr.hero.hp, 78.0), "hurts=%d hp=%s" % [lr.hurts, lr.hero.hp])
+	check("lunge carries the captain about 120 forward", absf((lc.position.y - origin_y) - 120.0) < 6.0, "moved=%s" % (lc.position.y - origin_y))
+	lr.free_all()
+
+	# Sidestep after the lock: no damage.
+	var sp := captain_rig(Vector2(320, 425), Vector2(320, 300))
+	var sr: Rig = sp[0]
+	var sc: Enemy = sp[1]
+	while not (sc.state == Enemy.State.WINDUP and sc.locked):
+		sr.tick(0.005)
+	sr.hero.position = Vector2(380, 425)
+	while sc.state != Enemy.State.RECOVER:
+		sr.tick(0.005)
+	check("stepping out of the locked lunge wedge takes no damage", is_equal_approx(sr.hero.hp, 100.0), "hp=%s" % sr.hero.hp)
+	sr.free_all()
+
+	# Dodge i-frames cover the lunge's active frames when started on time.
+	var dp := captain_rig(Vector2(320, 425), Vector2(320, 300))
+	var dr: Rig = dp[0]
+	var dc: Enemy = dp[1]
+	while not (dc.state == Enemy.State.WINDUP and dc.state_time >= 0.78):
+		dr.tick(0.005)
+	dr.input.key_move = Vector2(0, -1)
+	dr.input.press_dodge()
+	while dc.state != Enemy.State.RECOVER:
+		dr.tick(0.005)
+	check("a dodge started 0.02 s before the lunge lands avoids it", is_equal_approx(dr.hero.hp, 100.0), "hp=%s" % dr.hero.hp)
+	dr.free_all()
+
+
+func kill_all(g: Game) -> void:
+	for e in g.enemies:
+		if not e.is_dead():
+			e.take_hit(9999.0, e.position + Vector2(0, 10), 0.0)
+
+
+func test_captain_flow() -> void:
+	section("Wave, intermission, captain, victory")
+	var g := make_game()
+	g.start_fight(Game.Mode.THREE_CAPTAIN)
+	g.hero.hp = 40.0
+	g.hero.dodge_charges = 0
+	kill_all(g)
+	g.step(1.0 / 60.0)
+	check("clearing the wave does not end the fight", g.state == Game.State.FIGHTING and g.outcome == Game.Outcome.NONE and g.intermission_active)
+	check("breather heals 30 and refills dodges", is_equal_approx(g.hero.hp, 70.0) and g.hero.dodge_charges == g.hero.max_charges(), "hp=%s" % g.hero.hp)
+	check("no captain yet", g.enemies_alive() == 0 and not g.captain_spawned)
+	for i in int(1.8 * 60.0):
+		g.step(1.0 / 60.0)
+	check("still waiting at 1.8 s", g.enemies_alive() == 0 and g.intermission_active)
+	for i in int(0.3 * 60.0):
+		g.step(1.0 / 60.0)
+	check("the captain appears after the 2.0 s breather", g.enemies_alive() == 1 and g.captain_alive() and g.captain_spawned and not g.intermission_active)
+	var cap: Enemy = g.enemies.back()
+	check("captain spawns at the far end from the hero", cap.position.distance_to(g.hero.position) > 150.0, "d=%.1f" % cap.position.distance_to(g.hero.position))
+	check("captain has 150 HP and is bigger", is_equal_approx(cap.hp, 150.0) and cap.radius > 20.0)
+	cap.take_hit(9999.0, cap.position, 0.0)
+	g.step(1.0 / 60.0)
+	check("killing the captain wins", g.state == Game.State.RESULT and g.outcome == Game.Outcome.VICTORY)
+
+	g.start_fight(Game.Mode.THREE_CAPTAIN)
+	g.hero.hp = 90.0
+	kill_all(g)
+	g.step(1.0 / 60.0)
+	check("the heal never exceeds max health", is_equal_approx(g.hero.hp, 100.0))
+	for i in 150:
+		g.step(1.0 / 60.0)
+	g.hero.take_hit(1000.0)
+	g.step(1.0 / 60.0)
+	check("dying to the captain is a defeat", g.outcome == Game.Outcome.DEFEAT)
+
+	g.start_fight(Game.Mode.ONE)
+	kill_all(g)
+	g.step(1.0 / 60.0)
+	check("1 enemy mode has no captain", g.outcome == Game.Outcome.VICTORY and not g.captain_spawned and not g.intermission_active)
+
+	g.start_fight(Game.Mode.CAPTAIN_ONLY)
+	check("captain-only starts with just the captain", g.enemies.size() == 1 and g.captain_alive() and g.outcome == Game.Outcome.NONE)
+	kill_all(g)
+	g.step(1.0 / 60.0)
+	check("captain-only ends with the captain's death", g.outcome == Game.Outcome.VICTORY)
+
+	# Weapon choice through the menu, and it survives Retry.
+	g.menu.fight_requested.emit(Game.Mode.CAPTAIN_ONLY, 3)
+	check("menu picks daggers and captain-only", g.mode == Game.Mode.CAPTAIN_ONLY and g.hero.weapon.id == "daggers" and g.hero.dodge_charges == 3 and g.captain_alive())
+	g.start_fight(Game.Mode.ONE)
+	check("Retry keeps the chosen weapon", g.hero.weapon.id == "daggers" and g.weapon_index == 3)
+	g.start_fight(Game.Mode.ONE, 0)
+	check("choosing the sword resets weapon stats", g.hero.weapon.id == "sword" and g.hero.dodge_charges == 2 and is_equal_approx(g.hero.move_speed(), 180.0))
+	g.queue_free()
+
+
+func test_scripted_player_per_weapon() -> void:
+	section("Scripted player: 3 enemies, captain, victory with each weapon")
+	for wi in 4:
+		var g := make_game()
+		g.tuning.hero_max_hp = 100000.0
+		g.start_fight(Game.Mode.THREE_CAPTAIN, wi)
+		play(g, 240.0, true)
+		check("%s: full 3 + captain fight completes with a victory (inflated HP)" % g.weapon().display_name,
+				g.outcome == Game.Outcome.VICTORY and g.captain_spawned, "outcome=%s t=%.1f" % [g.outcome, g.fight_time])
+		print("        (%s, inflated HP: %.1f s)" % [g.weapon().display_name, g.fight_time])
+		g.queue_free()
+		var n := make_game()
+		n.start_fight(Game.Mode.THREE_CAPTAIN, wi)
+		play(n, 240.0, true)
+		print("        (%s, normal HP: %s in %.1f s, hero hp %d, captain seen %s)" % [n.weapon().display_name, Game.Outcome.keys()[n.outcome], n.fight_time, ceili(n.hero.hp), n.captain_spawned])
+		n.queue_free()

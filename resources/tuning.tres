@@ -54,3 +54,5 @@ control_band_fraction = 0.28
 joystick_radius = 90.0
 joystick_deadzone = 0.12
 result_delay = 0.6
+captain_intro_time = 2.0
+captain_heal = 30.0

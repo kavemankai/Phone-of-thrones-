@@ -184,8 +184,9 @@ func _draw() -> void:
 	draw_string(font, dodge_center + Vector2(-dr, 34.0), "DODGE", HORIZONTAL_ALIGNMENT_CENTER,
 			dr * 2.0, 20, Color.WHITE)
 	if hero != null:
-		for i in tuning.dodge_max_charges:
-			var c := dodge_center + Vector2((i - (tuning.dodge_max_charges - 1) * 0.5) * 20.0, 52.0)
+		var charges := hero.max_charges()
+		for i in charges:
+			var c := dodge_center + Vector2((i - (charges - 1) * 0.5) * 20.0, 52.0)
 			if i < hero.dodge_charges:
 				draw_circle(c, 6.0, Color(0.7, 0.9, 1.0))
 			else:
