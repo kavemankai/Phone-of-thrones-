@@ -46,7 +46,7 @@ func _draw_campaign() -> void:
 	var font := ThemeDB.fallback_font
 	var room := game.campaign.room()
 	var header := "%d / %d   %s" % [game.campaign.stage + 1, CampaignRun.ROOMS.size(), room.name]
-	var width := 620.0
+	var width := 620.0 if game.touch_ui else 780.0
 	var x := (size.x - width) * 0.5
 	var y := (150.0 if game.touch_ui else 36.0) + inset_top
 	draw_string(font, Vector2(x, y), header, HORIZONTAL_ALIGNMENT_CENTER, width, 24, room.light.lightened(0.45))
@@ -57,6 +57,11 @@ func _draw_campaign() -> void:
 		draw_string(font, Vector2(x, size.y * 0.5), "ROOM CLEAR",
 				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color.WHITE)
 	if game.state != Game.State.DOOR_CHOICE:
+		# Pickups carried this run, in the status bar.
+		if not game.touch_ui and not game.campaign.boons.is_empty():
+			draw_string(font, Vector2(x, size.y - bar_height + 34.0),
+					"  ·  ".join(Boon.titles(game.campaign.boons)),
+					HORIZONTAL_ALIGNMENT_CENTER, width, 17, Color(1.0, 0.83, 0.35))
 		return
 	var choices := game.campaign.choices()
 	var interact := "Tap the door" if game.touch_ui else "Press %s" % InputPrompts.confirm(game.prompt_style)
@@ -64,7 +69,7 @@ func _draw_campaign() -> void:
 		interact, game.arena_view.near_door + 1,
 	]
 	var panel_y := size.y * 0.28 if game.touch_ui else size.y - bar_height + 12.0
-	draw_rect(Rect2(x, panel_y, width, 130.0), Color(0.05, 0.06, 0.07, 0.94))
+	draw_rect(Rect2(x, panel_y, width, 178.0), Color(0.05, 0.06, 0.07, 0.94))
 	draw_string(font, Vector2(x, panel_y + 25.0), instruction,
 			HORIZONTAL_ALIGNMENT_CENTER, width, 22, Color.WHITE)
 	for i in choices.size():
@@ -86,6 +91,12 @@ func _draw_campaign() -> void:
 			reward += "  ·  +%d max guard for this run" % bonus
 		draw_string(font, Vector2(column_x, panel_y + 119.0), reward,
 				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 16, color)
+		var pickup := game.campaign.offer(i)
+		if pickup != "":
+			draw_string(font, Vector2(column_x, panel_y + 146.0), Boon.title(pickup),
+					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 19, Color(1.0, 0.83, 0.35))
+			draw_string(font, Vector2(column_x, panel_y + 166.0), Boon.text(pickup),
+					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 14, color)
 
 
 ## PC layout: one bar under the arena. Left: health, dodges, guard. Right: enemies and
