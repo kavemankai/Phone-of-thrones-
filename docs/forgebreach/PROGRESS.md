@@ -8,7 +8,7 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 | Admin: isolated work branch | DONE | `feature/forgebreach-controller-arena-crawl` |
 | Admin: game brief, QA division and issue list | DONE | See `START_HERE.md`, `GAME_SPEC.md`, `ENGINEERING.md`, `QA_PROTOCOL.md` |
 | Admin: automatic test + Windows export pipeline | CI PASS (baseline only) | [Run 42774512534](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42774512534): Godot import, existing combat tests, 120-frame boot and Windows cross-export succeeded on admin commit `3cb6885717eef2e81e022c2786e11b9268575891`. Windows/gamepad runtime NOT TESTED |
-| M1: 16:9 controller-first combat | IMPLEMENTED, QA PENDING | Gameplay commit `50f1f00b1a6d2d48119b6da945729a4bd51911b6` (issue #3). No tests, builds or controller hardware were run by the gameplay agent. See M1 checkpoint below |
+| M1: 16:9 controller-first combat | **SOFTWARE QA PASS; HARDWARE PENDING** | Gameplay fixes `ed213487`; QA PR #11 merged at `76be1892`; [QA run #42797533832](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42797533832): 460 legacy + 39 new tests passed; Windows cross-export passed. **Real Windows/gamepad check #15 still required.** |
 | M2: three-arena door-choice vertical slice | NOT STARTED | After M1 QA handoff |
 | M3: 10-stage finite campaign | NOT STARTED | After M2 QA handoff |
 | M4: game-feel / art / audio polish | NOT STARTED | Requires human controller playtests |
@@ -80,3 +80,11 @@ The first [FORGEBREACH CI workflow](https://github.com/kavemankai/Phone-of-thron
 - Standalone first-turn prompt and cloud-session fallback: `docs/forgebreach/TAKEOVER_PROMPT.md`.
 - Both skills use `disable-model-invocation: true`, so they do not consume their full context until explicitly invoked.
 - CI pipeline additionally accepts pull requests targeting the implementation branch, so QA-only child PRs can be verified before merging.
+
+### Milestone 1 QA disposition (2026-11-10)
+- **Software QA: GO.** Gamepad action bindings, synthetic A-confirm of Fight, independent right-stick aim, shield/dodge, focus/disconnect simulation, UI navigation mappings, Space-vs-accept separation, idempotent action setup, and two-press Quit tests passed (39/39).
+- **Regression QA: GO.** Original v0.9 suite passed (460/460).
+- **CI packaging: GO for cross-export only.** Import, headless scene boot and Windows Desktop cross-export succeeded in [run #42797533832](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42797533832).
+- **Physical gamepad acceptance: PENDING.** No real Windows execution, controller comfort, 1080p legibility or end-of-fight A/Enter timing sweep was recorded. See [hardware issue #15](https://github.com/kavemankai/Phone-of-thrones-/issues/15). Do not treat software success as full M1 hardware signoff.
+- **QA branch integrated.** Pull request [#11](https://github.com/kavemankai/Phone-of-thrones-/pull/11) merged into this development branch; production gameplay source was not changed by QA. The prior failed QA assertions were harness-state mistakes (not a proven gameplay defect); corrected tests retained the actual controller A event assertion.
+- M2 issue #4 remains not started. Finish the controller hardware smoke before unconditional M2 acceptance. The next implementation step is a three-arena door-choice slice after signoff.
