@@ -180,21 +180,26 @@ func _initialize() -> void:
     _check("showing a result disarms Quit", not menu._quit_armed)
     menu.queue_free()
 
-    # Synthetic UI input is tested distinctly from synthetic combat input.
-    # Call parse_input_event so Godot's own GUI processing activates the Button.
-    g.menu.show_start()
-    # SceneTree.process_frame callbacks may resume before nodes' _process().
-    # Explicitly exercise the real menu focus guard after the UI is visible.
-    g.menu._process(0.0)
+    # Test true first-launch title focus in a fresh Game, independently of
+    # focus left on the prior test's returning-from-fight menu.
+    g.queue_free()
+    await process_frame
+    var title_game := main.instantiate() as Game
+    root.add_child(title_game)
+    await process_frame
     await process_frame
     var focus := root.gui_get_focus_owner()
-    _check("Fight has controller navigation focus by default", focus == g.menu._fight_button)
+    print("  INFO  fresh title focus owner: ", focus.get_path() if focus != null else "<none>")
+    _check("Fight has controller navigation focus on first title screen",
+        focus == title_game.menu._fight_button)
+    # A synthetic UI press must use Godot's GUI event handling, not an explicit
+    # Button.pressed.emit(). This is not physical controller evidence.
     Input.parse_input_event(_pad_button(JOY_BUTTON_A, true))
     await process_frame
     Input.parse_input_event(_pad_button(JOY_BUTTON_A, false))
     await process_frame
-    _check("synthetic gamepad A activates focused Fight", g.state == Game.State.FIGHTING)
-    g.queue_free()
+    _check("synthetic gamepad A activates focused Fight", title_game.state == Game.State.FIGHTING)
+    title_game.queue_free()
 
     print("\nM1 independent QA: ", passed, " passed; ", failed, " failed.")
     quit(1 if failed > 0 else 0)
