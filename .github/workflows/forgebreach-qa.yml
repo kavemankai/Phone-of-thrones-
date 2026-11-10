@@ -6,10 +6,12 @@ on:
       - feature/forgebreach-controller-arena-crawl
       - qa/forgebreach-m2-codex-verification
       - feature/forgebreach-controls-stamina-campaign
+      - ccr-7b5c3e78-buce4p
   pull_request:
     branches:
       - feature/forgebreach-controller-arena-crawl
       - feature/forgebreach-controls-stamina-campaign
+      - ccr-7b5c3e78-buce4p
   workflow_dispatch:
 
 permissions:
