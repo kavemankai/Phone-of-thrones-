@@ -6,7 +6,10 @@ extends Resource
 
 @export_group("Hero")
 @export var hero_max_hp: float = 100.0
-@export var hero_speed: float = 180.0
+@export var hero_speed: float = 195.0
+## Seconds to reach full speed from a standstill, and to stop after letting go of the stick.
+@export var move_ramp_up: float = 0.12
+@export var move_ramp_down: float = 0.08
 @export var hero_radius: float = 16.0
 ## Movement multiplier while charging and during attack recovery.
 @export var half_speed_mult: float = 0.5
@@ -15,7 +18,7 @@ extends Resource
 
 @export_group("Light attack")
 @export var light_damage: float = 10.0
-@export var light_reach: float = 65.0
+@export var light_reach: float = 75.0
 @export var light_arc_deg: float = 90.0
 @export var light_windup: float = 0.10
 @export var light_active: float = 0.08
@@ -23,9 +26,9 @@ extends Resource
 
 @export_group("Heavy attack")
 ## Hold the attack button this long before release to get a heavy attack.
-@export var heavy_hold_time: float = 0.35
+@export var heavy_hold_time: float = 0.20
 @export var heavy_damage: float = 25.0
-@export var heavy_reach: float = 85.0
+@export var heavy_reach: float = 95.0
 @export var heavy_arc_deg: float = 140.0
 @export var heavy_windup: float = 0.15
 @export var heavy_active: float = 0.10
@@ -109,14 +112,16 @@ extends Resource
 @export var guard_break_refill: float = 0.5
 ## A hit this soon after raising the guard is a parry: no damage, no guard cost, attacker staggered.
 ## Generous on purpose: touch latency alone can eat 50 to 100 ms.
-@export var parry_window_shield: float = 0.28
-@export var parry_window_bare: float = 0.20
+@export var parry_window_shield: float = 0.40
+@export var parry_window_bare: float = 0.32
 ## After lowering the guard it cannot be raised again for this long.
 @export var block_reraise_delay: float = 0.35
 ## Stagger lengths for the sword (the baseline weapon). Every other weapon has its own in its
 ## .tres, and enemies scale them (EnemyProfile.stagger_mult / heavy_stagger_mult).
 @export var parry_stagger_time: float = 3.0
 @export var heavy_stagger_time: float = 1.0
+## Blocking (not parrying) an attack recoils the attacker this long. Hits do not end it.
+@export var block_stun_time: float = 1.2
 ## Damage multiplier for the hit that wakes a staggered enemy.
 @export var stagger_damage_mult: float = 2.0
 ## After a stagger ends an enemy cannot be heavy-staggered again for this long (no stun-lock).

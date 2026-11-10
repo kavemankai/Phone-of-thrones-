@@ -51,6 +51,7 @@ lock_time = 0.3
 min_range = 105.0
 max_range = 140.0
 guard_cost_mult = 2.0
+block_stun = false
 breaks_bare_guard = true
 
 [resource]
@@ -65,5 +66,6 @@ color = Color(0.55, 0.08, 0.14, 1)
 cap_color = Color(0.95, 0.78, 0.2, 1)
 bar_width = 64.0
 heavy_stagger_mult = 0.5
+execute_fraction = 0.4
 attacks = Array[ExtResource("1_n5q0y")]([SubResource("Resource_8fsbn"), SubResource("Resource_re6s5"), SubResource("Resource_vtiod"), SubResource("Resource_g2s6m")])
 pattern = PackedInt32Array(3, 0, 1, 0, 1)

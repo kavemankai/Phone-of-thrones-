@@ -18,6 +18,8 @@ extends Resource
 ## freeze. 0 on the heavy one means heavy hits never stagger it.
 @export var stagger_mult := 1.0
 @export var heavy_stagger_mult := 1.0
+## Share of this enemy's max HP that an executing parry (Weapon.parry_kill) takes: 1 kills it.
+@export var execute_fraction := 1.0
 @export var attacks: Array[AttackDef] = []
 ## Attack indices used in order, repeating. An entry is skipped when the hero is closer
 ## than that attack's min_range.

@@ -10,6 +10,7 @@ func _init() -> void:
 	failed += _save(_spear(), "res://resources/weapons/spear.tres")
 	failed += _save(_axe(), "res://resources/weapons/axe.tres")
 	failed += _save(_daggers(), "res://resources/weapons/daggers.tres")
+	failed += _save(_zweihander(), "res://resources/weapons/zweihander.tres")
 	failed += _save(_captain(), "res://resources/captain.tres")
 	quit(failed)
 
@@ -32,6 +33,7 @@ func _spear() -> Weapon:
 	w.color = Color(0.95, 0.9, 0.7)
 	w.parry_stagger_time = 3.5
 	w.heavy_stagger_time = 0.8
+	w.block_stun_time = 1.4
 	return w
 
 
@@ -50,6 +52,7 @@ func _axe() -> Weapon:
 	w.one_handed = false
 	w.parry_stagger_time = 2.5
 	w.heavy_stagger_time = 1.5
+	w.block_stun_time = 1.6
 	return w
 
 
@@ -57,9 +60,9 @@ func _daggers() -> Weapon:
 	var w := Weapon.new()
 	w.id = "daggers"
 	w.display_name = "Daggers"
-	w.description = "Speed. Very fast, short stabs. Faster walking, three dodges and quicker recharge."
-	w.light = AttackDef.make("Stab", 6.0, 45.0, 80.0, 0.05, 0.06, 0.12)
-	w.heavy = AttackDef.make("Flurry", 14.0, 55.0, 100.0, 0.10, 0.08, 0.22)
+	w.description = "Speed. A fast ring of short stabs that hits all around, and you keep moving while you attack. Parrying kills. Faster walking, three dodges."
+	w.light = AttackDef.make("Stab", 5.0, 40.0, 360.0, 0.04, 0.05, 0.09)
+	w.heavy = AttackDef.make("Whirl", 12.0, 50.0, 360.0, 0.08, 0.07, 0.18)
 	w.move_mult = 1.1
 	w.extra_dodge_charges = 1
 	w.dodge_recharge_mult = 0.8
@@ -69,7 +72,29 @@ func _daggers() -> Weapon:
 	w.one_handed = false
 	w.parry_stagger_time = 2.0
 	w.heavy_stagger_time = 0.6
+	w.block_stun_time = 0.8
+	w.parry_kill = true
+	w.attack_move_mult = 0.7
 	w.color = Color(0.8, 0.95, 1.0)
+	return w
+
+
+func _zweihander() -> Weapon:
+	var w := Weapon.new()
+	w.id = "zweihander"
+	w.display_name = "Zweihander"
+	w.description = "Long reach, wide arcs, slow and heavy. Two-handed, so no shield."
+	w.light = AttackDef.make("Sweep", 14.0, 85.0, 100.0, 0.18, 0.08, 0.32)
+	w.heavy = AttackDef.make("Great cleave", 34.0, 105.0, 160.0, 0.28, 0.12, 0.50, 45.0)
+	w.move_mult = 0.95
+	w.dodge_recharge_mult = 1.1
+	w.length = 40.0
+	w.thickness = 7.0
+	w.color = Color(0.82, 0.86, 0.95)
+	w.one_handed = false
+	w.parry_stagger_time = 3.0
+	w.heavy_stagger_time = 1.3
+	w.block_stun_time = 1.4
 	return w
 
 
@@ -85,6 +110,7 @@ func _captain() -> EnemyProfile:
 	p.cap_color = Color(0.95, 0.78, 0.2)
 	p.bar_width = 64.0
 	p.heavy_stagger_mult = 0.5  # a heavy hit staggers the captain for half as long
+	p.execute_fraction = 0.4  # an executing parry takes 40% of its max HP instead of killing it
 
 	var slash := AttackDef.make("Slash", 18.0, 62.0, 120.0, 0.70, 0.10, 0.60)
 	slash.max_range = 62.0
@@ -100,6 +126,7 @@ func _captain() -> EnemyProfile:
 	lunge.min_range = 105.0
 	lunge.max_range = 140.0
 	lunge.guard_cost_mult = 2.0
+	lunge.block_stun = false
 	lunge.breaks_bare_guard = true
 
 	p.attacks = [slash, combo1, combo2, lunge]
