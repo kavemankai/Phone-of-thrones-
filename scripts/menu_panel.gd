@@ -2,6 +2,8 @@ class_name MenuPanel
 extends Control
 ## Start screen and result screen share one panel: title, weapon and mode selectors and a
 ## primary button. Mode values match Game.Mode (0 one enemy, 1 three then captain, 2 captain).
+## Laid out for 16:9. Every choice is a focusable button, so a gamepad alone can use it:
+## D-pad or left stick moves the focus, A selects.
 
 signal fight_requested(mode: int, weapon_index: int, shield: bool)
 
@@ -25,6 +27,8 @@ var _weapon_group := ButtonGroup.new()
 var _weapon_buttons: Array[Button] = []
 var _weapons: Array[Weapon] = []
 var _mode_buttons: Array[Button] = []
+var _hint: Label
+var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 
 
 func _ready() -> void:
@@ -40,17 +44,17 @@ func _ready() -> void:
 	add_child(center)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
+	box.add_theme_constant_override("separation", 8)
 	center.add_child(box)
 
-	_title = _label(56)
+	_title = _label(50)
 	box.add_child(_title)
-	_info = _label(26)
+	_info = _label(22)
 	_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_info.custom_minimum_size = Vector2(600, 0)
+	_info.custom_minimum_size = Vector2(900, 0)
 	box.add_child(_info)
 
-	var weapon_label := _label(22)
+	var weapon_label := _label(18)
 	weapon_label.text = "WEAPON"
 	weapon_label.modulate = Color(1, 1, 1, 0.6)
 	box.add_child(weapon_label)
@@ -58,44 +62,47 @@ func _ready() -> void:
 	_weapon_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_weapon_row.add_theme_constant_override("separation", 8)
 	box.add_child(_weapon_row)
-	_weapon_desc = _label(24)
+	_weapon_desc = _label(20)
 	_weapon_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_weapon_desc.custom_minimum_size = Vector2(600, 64)
+	_weapon_desc.custom_minimum_size = Vector2(900, 54)
 	box.add_child(_weapon_desc)
+
+	# Shield and the two trial toggles share one row in landscape.
+	var option_row := HBoxContainer.new()
+	option_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	option_row.add_theme_constant_override("separation", 12)
+	box.add_child(option_row)
 
 	_shield_button = Button.new()
 	_shield_button.toggle_mode = true
-	_shield_button.custom_minimum_size = Vector2(320, 70)
-	_shield_button.add_theme_font_size_override("font_size", 28)
+	_shield_button.custom_minimum_size = Vector2(270, 54)
+	_shield_button.add_theme_font_size_override("font_size", 22)
+	UiFocus.style(_shield_button)
 	var shield_on := StyleBoxFlat.new()
 	shield_on.bg_color = Color(0.2, 0.45, 0.85)
 	shield_on.set_corner_radius_all(8)
 	_shield_button.add_theme_stylebox_override("pressed", shield_on)
 	_shield_button.add_theme_stylebox_override("hover_pressed", shield_on)
 	_shield_button.pressed.connect(func(): set_shield(_shield_button.button_pressed))
-	var shield_wrap := CenterContainer.new()
-	shield_wrap.add_child(_shield_button)
-	box.add_child(shield_wrap)
+	option_row.add_child(_shield_button)
 
 	_attack_mode_button = Button.new()
 	_attack_mode_button.toggle_mode = true
-	_attack_mode_button.custom_minimum_size = Vector2(460, 62)
-	_attack_mode_button.add_theme_font_size_override("font_size", 25)
+	_attack_mode_button.custom_minimum_size = Vector2(320, 54)
+	_attack_mode_button.add_theme_font_size_override("font_size", 22)
+	UiFocus.style(_attack_mode_button)
 	_attack_mode_button.pressed.connect(func(): set_split_attacks(_attack_mode_button.button_pressed))
-	var attack_wrap := CenterContainer.new()
-	attack_wrap.add_child(_attack_mode_button)
-	box.add_child(attack_wrap)
+	option_row.add_child(_attack_mode_button)
 
 	_guard_mode_button = Button.new()
 	_guard_mode_button.toggle_mode = true
-	_guard_mode_button.custom_minimum_size = Vector2(460, 62)
-	_guard_mode_button.add_theme_font_size_override("font_size", 25)
+	_guard_mode_button.custom_minimum_size = Vector2(320, 54)
+	_guard_mode_button.add_theme_font_size_override("font_size", 22)
+	UiFocus.style(_guard_mode_button)
 	_guard_mode_button.pressed.connect(func(): set_directional_guard(_guard_mode_button.button_pressed))
-	var guard_wrap := CenterContainer.new()
-	guard_wrap.add_child(_guard_mode_button)
-	box.add_child(guard_wrap)
+	option_row.add_child(_guard_mode_button)
 
-	var mode_label := _label(22)
+	var mode_label := _label(18)
 	mode_label.text = "FIGHT"
 	mode_label.modulate = Color(1, 1, 1, 0.6)
 	box.add_child(mode_label)
@@ -105,15 +112,17 @@ func _ready() -> void:
 	mode_row.add_theme_constant_override("separation", 12)
 	box.add_child(mode_row)
 	for i in MODE_NAMES.size():
-		var b := _toggle(MODE_NAMES[i], mode_group, Vector2(200, 84))
+		var b := _toggle(MODE_NAMES[i], mode_group, Vector2(220, 56))
+		b.add_theme_font_size_override("font_size", 24)
 		b.pressed.connect(func(): mode = i)
 		mode_row.add_child(b)
 		_mode_buttons.append(b)
 
 	_fight_button = Button.new()
-	_fight_button.custom_minimum_size = Vector2(360, 110)
-	_fight_button.add_theme_font_size_override("font_size", 44)
-	for style_name in ["normal", "hover", "pressed", "focus"]:
+	_fight_button.custom_minimum_size = Vector2(340, 76)
+	_fight_button.add_theme_font_size_override("font_size", 38)
+	UiFocus.style(_fight_button)
+	for style_name in ["normal", "hover", "pressed"]:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = Color(0.2, 0.62, 0.3) if style_name != "pressed" else Color(0.14, 0.45, 0.22)
 		sb.set_corner_radius_all(10)
@@ -123,10 +132,10 @@ func _ready() -> void:
 	wrap.add_child(_fight_button)
 	box.add_child(wrap)
 
-	var hint := _label(21)
-	hint.text = "MOVE with left thumb. ATTACK tap/hold or split LIGHT/HEAVY.\nBLOCK before impact to parry. DODGE avoids hits.\nDesktop: WASD / arrows, J attack, K block, Space dodge."
-	hint.modulate = Color(1, 1, 1, 0.65)
-	box.add_child(hint)
+	_hint = _label(18)
+	_hint.modulate = Color(1, 1, 1, 0.65)
+	box.add_child(_hint)
+	_refresh_hint()
 
 	set_mode(mode)
 	set_split_attacks(split_attacks)
@@ -141,8 +150,8 @@ func set_weapons(list: Array[Weapon]) -> void:
 		b.queue_free()
 	_weapon_buttons.clear()
 	for i in list.size():
-		var b := _toggle(list[i].display_name, _weapon_group, Vector2(118, 84))
-		b.add_theme_font_size_override("font_size", 21)
+		var b := _toggle(list[i].display_name, _weapon_group, Vector2(160, 58))
+		b.add_theme_font_size_override("font_size", 22)
 		b.pressed.connect(func(): set_weapon(i))
 		_weapon_row.add_child(b)
 		_weapon_buttons.append(b)
@@ -168,14 +177,15 @@ func set_split_attacks(on: bool) -> void:
 	split_attacks = on
 	if _attack_mode_button != null:
 		_attack_mode_button.set_pressed_no_signal(on)
-		_attack_mode_button.text = "Attacks: SPLIT buttons" if on else "Attacks: HOLD for heavy"
+		_attack_mode_button.text = "Attack key: LIGHT only" if on else "Attack key: HOLD = heavy"
+	_refresh_hint()
 
 
 func set_directional_guard(on: bool) -> void:
 	directional_guard = on
 	if _guard_mode_button != null:
 		_guard_mode_button.set_pressed_no_signal(on)
-		_guard_mode_button.text = "Guard: DIRECTIONAL trial" if on else "Guard: ALL-ROUND original"
+		_guard_mode_button.text = "Guard: DIRECTIONAL trial" if on else "Guard: ALL-ROUND"
 
 
 ## A shield only works with a one-handed weapon.
@@ -202,9 +212,9 @@ func set_mode(m: int) -> void:
 
 
 func show_start() -> void:
-	_title.text = "SHIELDWALL"
+	_title.text = "FORGEBREACH"
 	_title.modulate = Color.WHITE
-	_info.text = "Combat test: pick a weapon, then fight."
+	_info.text = "Pick a weapon, then fight."
 	_fight_button.text = "Fight"
 	visible = true
 
@@ -223,6 +233,24 @@ func layout(vp: Vector2) -> void:
 	size = vp
 
 
+## Button names in the hint follow the device in use.
+func set_prompt_style(style: InputPrompts.Style) -> void:
+	_style = style
+	_refresh_hint()
+
+
+func _refresh_hint() -> void:
+	if _hint == null:
+		return
+	_hint.text = "%s\n%s\nGuard just before impact to parry. Dodge passes through hits." % [
+			InputPrompts.menu_hint(_style), InputPrompts.combat_line(_style, not split_attacks)]
+
+
+## Keeps the focus on the panel while it is shown; the primary button is the default.
+func _process(_delta: float) -> void:
+	UiFocus.keep_inside(self, _fight_button)
+
+
 func _label(font_size: int) -> Label:
 	var l := Label.new()
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -237,6 +265,7 @@ func _toggle(text: String, group: ButtonGroup, min_size: Vector2) -> Button:
 	b.button_group = group
 	b.custom_minimum_size = min_size
 	b.add_theme_font_size_override("font_size", 28)
+	UiFocus.style(b)
 	var on := StyleBoxFlat.new()
 	on.bg_color = Color(0.2, 0.45, 0.85)
 	on.set_corner_radius_all(8)

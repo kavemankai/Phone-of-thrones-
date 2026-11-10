@@ -1,0 +1,75 @@
+# FORGEBREACH progress ledger
+
+Updated 2026-11-10. This file is the durable checkpoint for handovers; distinguish implementation, automated evidence and physical verification.
+
+| Milestone | Status | Evidence / blocker |
+| --- | --- | --- |
+| 0: baseline protected | DONE | `combat-polish-v0.9` at `6df060e606e9fc82a53dfc1302d226a4529047f1`. Historical successful 460-check/Android CI: https://github.com/kavemankai/Phone-of-thrones-/actions/runs/39247887572 |
+| Admin: isolated work branch | DONE | `feature/forgebreach-controller-arena-crawl` |
+| Admin: game brief, QA division and issue list | DONE | See `START_HERE.md`, `GAME_SPEC.md`, `ENGINEERING.md`, `QA_PROTOCOL.md` |
+| Admin: automatic test + Windows export pipeline | CI PASS (baseline only) | [Run 42774512534](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42774512534): Godot import, existing combat tests, 120-frame boot and Windows cross-export succeeded on admin commit `3cb6885717eef2e81e022c2786e11b9268575891`. Windows/gamepad runtime NOT TESTED |
+| M1: 16:9 controller-first combat | IMPLEMENTED, QA PENDING | Gameplay commit `50f1f00b1a6d2d48119b6da945729a4bd51911b6` (issue #3). No tests, builds or controller hardware were run by the gameplay agent. See M1 checkpoint below |
+| M2: three-arena door-choice vertical slice | NOT STARTED | After M1 QA handoff |
+| M3: 10-stage finite campaign | NOT STARTED | After M2 QA handoff |
+| M4: game-feel / art / audio polish | NOT STARTED | Requires human controller playtests |
+| M5: Windows release acceptance | NOT STARTED | Native Windows and physical gamepad evidence required |
+
+The existing project still runs as Shieldwall Combat Test; no new gameplay is claimed by these administrative commits. The displayed title FORGEBREACH is provisional.
+
+### Activity log
+- 2026-11-10: product direction switched from phone combat prototype to finite, controller-first, Windows 16:9 arena progression.
+- 2026-11-10: initialized protected feature branch at latest confirmed v0.9, prepared model-role separation and independent CI/testing workflow.
+
+- 2026-11-10: M1 code landed (commits `2a17f90`, `149c1bd`, `50f1f00`). Handed to QA; M2 not started.
+
+### M1 checkpoint (2026-11-10)
+Commit: `50f1f00b1a6d2d48119b6da945729a4bd51911b6`. Milestone: 1 (issue #3). QA: pending, nothing executed by the gameplay agent.
+
+Changed files: `project.godot`, `scripts/game.gd`, `scripts/combat_input.gd`, `scripts/hero.gd` (facing only), `scripts/menu_panel.gd`, `scripts/combat_hud.gd`; new `scripts/input_actions.gd`, `scripts/input_prompts.gd`, `scripts/ui_focus.gd`, `scripts/pause_panel.gd`. No tuning, weapon, enemy or test file was touched.
+
+Player-visible behaviour:
+- 1280x720 landscape, 16:9 letterboxed (`stretch/aspect="keep"`). Title reads FORGEBREACH.
+- Actions `fb_*` are registered in the InputMap by `InputActions.ensure()` for all devices. Gamepad: left stick move (radial dead zone 0.20), right stick facing (0.35), X light, Y heavy, B dodge, LB guard, Start pause. Keyboard: WASD/arrows, J light (tap/hold as in v0.9, or light-only with the split option), L heavy, Space dodge, K guard, Esc/P pause, F11 fullscreen.
+- Right stick sets facing while the hero may turn (idle, charging, recovery, guard). At rest, walking sets facing as before; aim assist is unchanged and still only snaps inside its 90 degree cone.
+- Menus take focus: D-pad/left stick/arrows move, A/Enter selects. Focus ring is drawn on every button and focus is pulled back into the visible panel each frame.
+- Pause panel: resume, restart fight, change loadout, fullscreen, quit. Start/Esc/B also resume.
+- Pad unplugged or window focus lost during a fight: all `fb_*` actions are released, CombatInput is cleared and the fight pauses with a reason line.
+- PC HUD is a bar under the arena (HP, guard, dodges, enemies, loadout) with a button legend that follows the last device used (Xbox labels, PlayStation names, or keys). Touch buttons are hidden and disabled unless the `mobile` feature is present.
+
+Known concerns for QA:
+1. Nothing here has been parsed or run by Godot. A script error would fail the import step first.
+2. `test_isometric_view` requires the arena's corners above `vp.y * (1 - control_band_fraction)`. To keep that check green the arena uses only the top 72% of the screen and the HUD bar takes the rest. A larger arena needs that test relaxed by QA.
+3. `g.notification(FOCUS_OUT)` now also pauses the fight. The existing check only inspects cleared input, so it should hold.
+4. The Enter-starts-fight shortcut is gone; Enter now activates the focused button (Fight is focused by default).
+5. Space is both dodge and `ui_accept`: a keyboard player mashing Space at the end of a fight can trigger Retry as the result panel appears.
+6. The title menu has no Quit entry; quitting by pad is only on the pause panel.
+7. Toggling fullscreen during a fight may fire a focus-out on some window managers and pause it.
+8. Phone build: orientation is now landscape and the touch layout was not re-authored for it. Android is no longer a target, but `godot-checks.yml` still exports an APK on pull requests.
+9. PlayStation detection is a name match on `Input.get_joy_name`; unknown pads get Xbox labels.
+10. Not verified by anyone: stick feel, dead zones, focus navigation order with a real pad, disconnect on Windows, 1920x1080 scaling.
+
+New checks worth adding (QA owns them): actions exist after `Game._ready`; a synthetic `InputEventJoypadButton` X starts a light windup in one step and Y a heavy; `input.aim` turns facing without movement and leaves it when zeroed; LB press/hold/release via `_input`; `pause_game()` freezes `fight_time`; `_on_joy_connection_changed(0, false)` clears input and pauses; `return_to_menu()` leaves no enemies.
+
+Next smallest gameplay task after QA sign-off: issue #4, RunState/ArenaCatalog and the `ROOM_CLEAR` state.
+
+### Future checkpoint template
+Date, milestone, commit SHA, code delivered, CI URL, QA sign-off, physical tests, next smallest implementation task.
+
+### Implementation tickets
+- [#3 Controller-first landscape combat](https://github.com/kavemankai/Phone-of-thrones-/issues/3) — gameplay owner Fable; first task.
+- [#4 Three-room door-choice slice](https://github.com/kavemankai/Phone-of-thrones-/issues/4).
+- [#5 Ten-stage complete campaign](https://github.com/kavemankai/Phone-of-thrones-/issues/5).
+- [#6 Presentation and balance](https://github.com/kavemankai/Phone-of-thrones-/issues/6).
+- [#7 Windows release candidate](https://github.com/kavemankai/Phone-of-thrones-/issues/7).
+- [#8 Independent QA](https://github.com/kavemankai/Phone-of-thrones-/issues/8) — lower-cost model/human.
+
+### Automated baseline verification
+The first [FORGEBREACH CI workflow](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42774512534) completed successfully on 2026-11-10. It exported a Windows desktop artifact and retained QA logs. It did not perform physical controller tests, run the Windows binary, change UI orientation, or implement arena progression; those remain in M1 and later. 
+
+### Claude Code handover setup
+- Project-wide instructions: root `CLAUDE.md` (loaded at session start).
+- Manual gameplay skill: `.claude/skills/forgebreach-takeover/SKILL.md`, invoke `/forgebreach-takeover`.
+- Manual QA skill: `.claude/skills/forgebreach-qa/SKILL.md`, invoke `/forgebreach-qa` **in a separate session with a lower-cost model**.
+- Standalone first-turn prompt and cloud-session fallback: `docs/forgebreach/TAKEOVER_PROMPT.md`.
+- Both skills use `disable-model-invocation: true`, so they do not consume their full context until explicitly invoked.
+- CI pipeline additionally accepts pull requests targeting the implementation branch, so QA-only child PRs can be verified before merging.

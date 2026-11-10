@@ -1,7 +1,9 @@
 class_name Game
 extends Node
 ## Owns the encounter: builds the scene, runs the simulation in fixed sub-steps, decides
-## victory or defeat, and handles retry. step(dt) is public so tests can drive it.
+## victory or defeat, and handles retry and pause. step(dt) is public so tests can drive it.
+## Device input arrives as InputMap actions (see InputActions) and is translated into
+## CombatInput here; nothing below this node knows about keys or pads.
 
 enum State { MENU, FIGHTING, RESULT }
 enum Outcome { NONE, VICTORY, DEFEAT }
@@ -12,6 +14,8 @@ enum Mode { ONE, THREE_CAPTAIN, CAPTAIN_ONLY }
 const SUBSTEP := 1.0 / 60.0
 const MAX_FRAME_DT := 0.1
 const HUD_HEIGHT := 110.0
+## Gap above the arena on PC, where the status bar sits under the arena instead.
+const ARENA_TOP_MARGIN := 14.0
 const TUNING_PATH := "res://resources/tuning.tres"
 const HERO_SCENE := preload("res://scenes/hero.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
@@ -48,6 +52,13 @@ var intermission_left := 0.0
 var fight_time := 0.0
 var result_timer := 0.0
 var enemies: Array = []
+## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
+var paused := false
+## Phone build only: show and read the on-screen buttons. Never on desktop.
+var touch_ui := false
+var prompt_style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
+## The guard button was down when the pause ended, so no press event will arrive for it.
+var _guard_held_over_pause := false
 
 var arena_root: Node2D
 ## Holds the arena, hero and enemies. Its transform is the isometric projection; children
@@ -58,10 +69,13 @@ var hero: Hero
 var controls: TouchControls
 var hud: CombatHud
 var menu: MenuPanel
+var pause_panel: PausePanel
 var sfx: Sfx
 
 
 func _ready() -> void:
+	InputActions.ensure()
+	touch_ui = OS.has_feature("mobile")
 	# A private copy, so changing values at runtime (tests) never edits the shared resource.
 	var loaded := load(TUNING_PATH) as Tuning
 	tuning = loaded.duplicate() as Tuning if loaded != null else null
@@ -127,9 +141,21 @@ func _ready() -> void:
 		split_attacks = menu.split_attacks
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
+	pause_panel = PausePanel.new()
+	ui.add_child(pause_panel)
+	pause_panel.resume_requested.connect(resume_game)
+	pause_panel.restart_requested.connect(func(): start_fight(mode))
+	pause_panel.loadout_requested.connect(return_to_menu)
+	pause_panel.quit_requested.connect(func(): get_tree().quit())
 
 	sfx = Sfx.new()
 	add_child(sfx)
+
+	Input.joy_connection_changed.connect(_on_joy_connection_changed)
+	var pads := Input.get_connected_joypads()
+	if not pads.is_empty():
+		prompt_style = InputPrompts.style_for_joypad(pads[0])
+	_apply_prompt_style()
 
 	get_viewport().size_changed.connect(_apply_layout)
 	_apply_layout()
@@ -173,6 +199,8 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	controller.reset()
 	controls.reset()
 	input.clear()
+	paused = false
+	_guard_held_over_pause = false
 	# The trial changes only this Game's private tuning copy.
 	tuning.block_arc_shield = 140.0 if directional_guard else original_defense["shield_arc"]
 	tuning.block_arc_bare = 110.0 if directional_guard else original_defense["bare_arc"]
@@ -200,6 +228,7 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	menu.set_shield(shield_on)
 	menu.set_split_attacks(split_attacks)
 	menu.set_directional_guard(directional_guard)
+	_apply_prompt_style()
 	_set_state(State.FIGHTING)
 
 
@@ -240,7 +269,7 @@ func _begin_intermission() -> void:
 ## Advance the simulation by dt seconds in fixed-size slices (a slow frame never skips
 ## the short active window of an attack).
 func step(dt: float) -> void:
-	if state != State.FIGHTING:
+	if state != State.FIGHTING or paused:
 		return
 	dt = minf(dt, MAX_FRAME_DT)
 	var n := maxi(1, ceili(dt / SUBSTEP - 0.0001))
@@ -292,9 +321,11 @@ func _finish(result: Outcome) -> void:
 
 func _set_state(s: State) -> void:
 	state = s
+	paused = false
+	pause_panel.close()
 	hud.visible = s != State.MENU
 	arena_root.visible = s != State.MENU
-	controls.set_enabled(s == State.FIGHTING)
+	_update_touch_controls()
 	match s:
 		State.MENU:
 			menu.show_start()
@@ -308,7 +339,9 @@ func _set_state(s: State) -> void:
 func _process(delta: float) -> void:
 	match state:
 		State.FIGHTING:
-			_poll_keyboard()
+			if paused:
+				return
+			_poll_devices()
 			step(delta)
 		State.RESULT:
 			if result_timer > 0.0:
@@ -317,41 +350,187 @@ func _process(delta: float) -> void:
 					menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
 
 
-func _poll_keyboard() -> void:
-	var v := Vector2(
-		float(Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
-		- float(Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT)),
-		float(Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN))
-		- float(Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP)))
-	input.key_move = v.limit_length(1.0)
+## Held, analogue input: left stick / movement keys and the right stick. Read once per frame;
+## the radial dead zones live in InputActions.
+func _poll_devices() -> void:
+	input.key_move = InputActions.read_move()
+	input.aim = InputActions.read_aim()
+	if _guard_held_over_pause and not Input.is_action_pressed(InputActions.GUARD):
+		_drop_guard_carryover()
 
 
+## Button edges. Each press sets a one-step flag in CombatInput, which the next simulation
+## sub-step consumes and clears, so a press is acted on once however long the frame was.
 func _input(event: InputEvent) -> void:
-	if not (event is InputEventKey) or event.echo:
+	if event is InputEventKey and event.echo:
 		return
+	_note_device(event)
+	if event.is_action_pressed(InputActions.FULLSCREEN):
+		pause_panel.toggle_fullscreen()
+		return
+	if state != State.FIGHTING:
+		return
+	if paused:
+		# Pause again or Back closes the pause. Everything else belongs to the panel.
+		if event.is_action_pressed(InputActions.PAUSE) or event.is_action_pressed(&"ui_cancel"):
+			resume_game()
+			get_viewport().set_input_as_handled()
+		return
+	if event.is_action_pressed(InputActions.PAUSE):
+		pause_game()
+		get_viewport().set_input_as_handled()
+		return
+	_combat_event(event)
+
+
+func _combat_event(event: InputEvent) -> void:
+	var from_pad := InputActions.is_pad_event(event)
+	if event.is_action_pressed(InputActions.LIGHT):
+		# Gamepad X is always an immediate light. The key keeps the v0.9 tap/hold unless the
+		# split-attack option is on.
+		if from_pad or split_attacks:
+			input.press_light()
+		else:
+			input.press_attack(false)
+	elif event.is_action_released(InputActions.LIGHT):
+		if not from_pad:
+			input.release_attack(false)
+	elif event.is_action_pressed(InputActions.HEAVY):
+		input.press_heavy()
+	elif event.is_action_pressed(InputActions.DODGE):
+		input.press_dodge()
+	elif event.is_action_pressed(InputActions.GUARD):
+		_drop_guard_carryover()
+		if from_pad:
+			input.set_pad_block(true)
+		else:
+			input.press_block(false)
+	elif event.is_action_released(InputActions.GUARD):
+		_drop_guard_carryover()
+		if from_pad:
+			input.set_pad_block(false)
+		else:
+			input.release_block(false)
+
+
+func _drop_guard_carryover() -> void:
+	if not _guard_held_over_pause:
+		return
+	_guard_held_over_pause = false
+	input.release_block(false)
+	input.set_pad_block(false)
+
+
+## Stops the simulation and shows the pause panel. Held input is dropped, so nothing can
+## stay stuck behind the panel.
+func pause_game(reason := "") -> void:
+	if state != State.FIGHTING or paused:
+		return
+	paused = true
+	_guard_held_over_pause = false
+	input.clear()
+	_update_touch_controls()
+	pause_panel.open(reason)
+
+
+func resume_game() -> void:
+	if not paused:
+		return
+	paused = false
+	pause_panel.close()
+	_update_touch_controls()
+	input.clear()
+	# A guard held through the pause is still held; sticks are read again next frame.
+	_guard_held_over_pause = Input.is_action_pressed(InputActions.GUARD)
+	if _guard_held_over_pause:
+		input.press_block(false)
+
+
+## Leaves the fight for the loadout screen (from the pause panel).
+func return_to_menu() -> void:
+	for e in enemies:
+		iso_layer.remove_child(e)
+		e.queue_free()
+	enemies.clear()
+	controller.reset()
+	controls.reset()
+	input.clear()
+	_guard_held_over_pause = false
+	outcome = Outcome.NONE
+	_set_state(State.MENU)
+
+
+func _update_touch_controls() -> void:
+	controls.visible = touch_ui
+	controls.set_enabled(touch_ui and state == State.FIGHTING and not paused)
+
+
+## Drop everything a device was holding: used when it can no longer send the release.
+func _release_all_input() -> void:
+	InputActions.release_all()
+	_guard_held_over_pause = false
+	input.clear()
+	if controls != null:
+		controls.reset()
+
+
+func _on_joy_connection_changed(_device: int, connected: bool) -> void:
+	if connected:
+		if paused:
+			pause_panel.set_reason("Controller connected.")
+		return
+	_release_all_input()
+	if Input.get_connected_joypads().is_empty():
+		_set_prompt_style(InputPrompts.Style.KEYBOARD)
 	if state == State.FIGHTING:
-		if event.physical_keycode == KEY_J:
-			if event.pressed:
-				input.press_attack(false)
-			else:
-				input.release_attack(false)
-		elif event.physical_keycode == KEY_SPACE and event.pressed:
-			input.press_dodge()
-		elif event.physical_keycode == KEY_K:
-			if event.pressed:
-				input.press_block(false)
-			else:
-				input.release_block(false)
-	elif event.pressed and event.physical_keycode == KEY_ENTER and menu.visible:
-		shield_on = menu.shield_usable()
-		start_fight(menu.mode as Mode, menu.weapon_index)
+		if paused:
+			pause_panel.set_reason("Controller disconnected.")
+		else:
+			pause_game("Controller disconnected.")
+
+
+## Remember which kind of device was used last, so prompts name the right buttons.
+func _note_device(event: InputEvent) -> void:
+	var style := prompt_style
+	if event is InputEventJoypadButton:
+		if not event.pressed:
+			return
+		style = InputPrompts.style_for_joypad(event.device)
+	elif event is InputEventJoypadMotion:
+		if absf(event.axis_value) < 0.5:
+			return
+		style = InputPrompts.style_for_joypad(event.device)
+	elif event is InputEventKey:
+		if not event.pressed:
+			return
+		style = InputPrompts.Style.KEYBOARD
+	else:
+		return
+	_set_prompt_style(style)
+
+
+func _set_prompt_style(style: InputPrompts.Style) -> void:
+	if style == prompt_style:
+		return
+	prompt_style = style
+	_apply_prompt_style()
+
+
+func _apply_prompt_style() -> void:
+	if menu != null:
+		menu.set_prompt_style(prompt_style)
+	if pause_panel != null:
+		pause_panel.set_prompt_style(prompt_style, not split_attacks)
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT \
 			or what == NOTIFICATION_APPLICATION_PAUSED:
-		if controls != null:
-			controls.reset()
+		if controls == null or pause_panel == null:
+			return
+		_release_all_input()
+		if state == State.FIGHTING:
+			pause_game("Paused: the game window lost focus.")
 
 
 # Bodies never share a spot. Enemies in a committed attack hold still and the others
@@ -402,12 +581,15 @@ func _apply_layout() -> void:
 		return
 	var vp := get_viewport().get_visible_rect().size
 	var insets := _safe_insets(vp)
+	# The strip under the arena: touch buttons on a phone, the status bar and button legend
+	# on PC. The arena never reaches into it.
 	var band_h := vp.y * tuning.control_band_fraction
+	var top := insets.y + (HUD_HEIGHT if touch_ui else ARENA_TOP_MARGIN)
 	var free := Rect2(
 		insets.x + 10.0,
-		insets.y + HUD_HEIGHT,
+		top,
 		vp.x - insets.x - insets.z - 20.0,
-		vp.y - band_h - insets.y - HUD_HEIGHT - 10.0)
+		vp.y - band_h - top - 10.0)
 	# The isometric diamond spans x in [-H, W] and y in [0, (W + H) / 2] around the ground origin.
 	var a := tuning.arena_size
 	var extent := Vector2(a.x + a.y, (a.x + a.y) * 0.5)
@@ -415,9 +597,10 @@ func _apply_layout() -> void:
 	arena_root.scale = Vector2(s, s)
 	var local_center := Vector2((a.x - a.y) * 0.5, (a.x + a.y) * 0.25)
 	arena_root.position = free.get_center() - local_center * s
-	hud.layout(vp, insets)
+	hud.layout(vp, insets, band_h)
 	controls.layout(vp, band_h, insets)
 	menu.layout(vp)
+	pause_panel.layout(vp)
 
 
 ## Safe-area margins (left, top, right, bottom) in canvas pixels. Zero on desktop.

@@ -1,0 +1,81 @@
+name: FORGEBREACH automated QA (no AI model)
+
+on:
+  push:
+    branches:
+      - feature/forgebreach-controller-arena-crawl
+  pull_request:
+    branches:
+      - feature/forgebreach-controller-arena-crawl
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forgebreach-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests-and-desktop-export:
+    name: Godot tests and Windows export
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out exact commit
+        uses: actions/checkout@v4
+
+      - name: Install Godot 4.6.2 with export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.2
+          use-dotnet: false
+          include-templates: true
+
+      - name: Initialize logs
+        run: mkdir -p build/qa build/windows
+
+      - name: Import project and validate resources
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --import 2>&1 | tee build/qa/import.log
+
+      - name: Run existing combat regression suite
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/run_tests.gd 2>&1 | tee build/qa/combat-tests.log
+
+      - name: Boot scene for 120 frames
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --quit-after 120 2>&1 | tee build/qa/boot.log
+
+      - name: Export Windows desktop build
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --export-release "Windows Desktop" build/windows/Forgebreach.exe 2>&1 | tee build/qa/windows-export.log
+          test -s build/windows/Forgebreach.exe
+          find build/windows -maxdepth 1 -type f -printf '%f %s bytes\n' | tee build/qa/windows-files.log
+          sha256sum build/windows/Forgebreach.exe | tee build/qa/windows-sha256.txt
+
+      - name: Upload QA logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgebreach-qa-logs
+          path: build/qa/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload unvalidated Windows export
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgebreach-windows-unvalidated
+          path: build/windows/
+          if-no-files-found: error
+          retention-days: 14
