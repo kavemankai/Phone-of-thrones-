@@ -9,7 +9,7 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 | Admin: game brief, QA division and issue list | DONE | See `START_HERE.md`, `GAME_SPEC.md`, `ENGINEERING.md`, `QA_PROTOCOL.md` |
 | Admin: automatic test + Windows export pipeline | CI PASS (baseline only) | [Run 42774512534](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42774512534): Godot import, existing combat tests, 120-frame boot and Windows cross-export succeeded on admin commit `3cb6885717eef2e81e022c2786e11b9268575891`. Windows/gamepad runtime NOT TESTED |
 | M1: 16:9 controller-first combat | **SOFTWARE QA PASS; HARDWARE PENDING** | Gameplay fixes `ed213487`; QA PR #11 merged at `76be1892`; [QA run #42797533832](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42797533832): 460 legacy + 39 new tests passed; Windows cross-export passed. **Real Windows/gamepad check #15 still required.** |
-| M2: three-arena door-choice vertical slice | NOT STARTED | After M1 QA handoff |
+| M2: three-arena door-choice vertical slice | LOCAL IMPLEMENTATION; QA PENDING | Gatehouse, Kennels and Hall, two physical doors after each of the first two clears, distinct risk and rewards, stable entry checkpoints, separate Test Room. Windows Gatehouse entry and initial checkpoint observed. |
 | M3: 10-stage finite campaign | NOT STARTED | After M2 QA handoff |
 | M4: game-feel / art / audio polish | NOT STARTED | Requires human controller playtests |
 | M5: Windows release acceptance | NOT STARTED | Native Windows and physical gamepad evidence required |
@@ -17,6 +17,10 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 The existing project still runs as Shieldwall Combat Test; no new gameplay is claimed by these administrative commits. The displayed title FORGEBREACH is provisional.
 
 ### Activity log
+- M2 content pass: Pike Sentinel with minimum thrust range and exposed recovery, War Hound with an orbit and a locked leap, and solid campaign-only cover in the renamed Shattered Gatehouse and Blood Kennels. Windows Gatehouse entry, two enemies, the pike, and central cover were observed in-game. QA should check corner routing, cover collision for rolls and lunges, hits blocked through cover, Pike recovery, and Hound lock and orbit. The Hall Sweeper stays in the slice as a stand-in. Expanded roster and arena brief captured in GAME_SPEC.md.
+- Local M2 checkpoint: the Gatehouse opens from New Campaign. Doors show their enemy mix, healing and any run guard bonus. Continue and Retry use the room entry snapshot. Independent QA should verify both doors at each clear, reward carry and reload, retry, clear-to-door input, controller-only completion and Test Room regressions. The ten-stage route and five arena names are recorded in GAME_SPEC.md for M3.
+- Local stamina and roll: light 12, heavy 26, roll 18, normal block 1 per damage before the attack modifier (0.55 with a shield). Parry remains free. Recovery is 28/s after a 0.65 s delay and requires lowering the guard. Windows arena and HUD observed; combat balance and independent QA pending.
+- Local controls option: title and pause menus now allow saved keyboard and controller bindings. The Windows menu, save across relaunch, and restore defaults were checked in the running game. Independent QA and physical controller checks are pending.
 - 2026-11-10: product direction switched from phone combat prototype to finite, controller-first, Windows 16:9 arena progression.
 - 2026-11-10: initialized protected feature branch at latest confirmed v0.9, prepared model-role separation and independent CI/testing workflow.
 

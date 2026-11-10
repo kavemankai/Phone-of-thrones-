@@ -33,6 +33,10 @@ const ALL: Array[StringName] = [
 	LIGHT, HEAVY, DODGE, GUARD, PAUSE, FULLSCREEN,
 ]
 
+const BINDINGS_PATH := "user://controls.cfg"
+static var _defaults: Dictionary = {}
+static var _custom := ConfigFile.new()
+
 
 ## Registers every action once. Safe to call again.
 static func ensure() -> void:
@@ -51,6 +55,114 @@ static func ensure() -> void:
 	_bind(PAUSE, [_key(KEY_ESCAPE), _key(KEY_P), _button(JOY_BUTTON_START)])
 	_bind(FULLSCREEN, [_key(KEY_F11)])
 	_ensure_ui()
+	if _defaults.is_empty():
+		for action in ALL:
+			_defaults[action] = InputMap.action_get_events(action)
+		_custom.load(BINDINGS_PATH)
+		_apply_bindings()
+
+
+## Each override replaces the bindings for one device family. An unused action
+## can take a binding from another action without creating a duplicate.
+static func rebind(action: StringName, event: InputEvent) -> Error:
+	var pad := is_pad_event(event)
+	var section := "controller" if pad else "keyboard"
+	var encoded := _encode(event)
+	var previous := binding_events(action, pad)
+	var next := ConfigFile.new()
+	next.parse(_custom.encode_to_text())
+	for other in ALL:
+		if other == action:
+			continue
+		var events := binding_events(other, pad)
+		for i in events.size():
+			if _encode(events[i]) != encoded:
+				continue
+			events.remove_at(i)
+			if not previous.is_empty() and accepts_binding(other, previous[0]):
+				events.insert(i, previous[0])
+			next.set_value(section, other, _encode_list(events))
+			break
+	next.set_value(section, action, [encoded])
+	return _save_bindings(next)
+
+
+static func accepts_binding(action: StringName, event: InputEvent) -> bool:
+	return not event is InputEventJoypadMotion or action in [
+		MOVE_LEFT, MOVE_RIGHT, MOVE_UP, MOVE_DOWN, AIM_LEFT, AIM_RIGHT, AIM_UP, AIM_DOWN,
+	]
+
+
+static func reset_bindings() -> Error:
+	return _save_bindings(ConfigFile.new())
+
+
+static func has_override(action: StringName, pad: bool) -> bool:
+	return _custom.has_section_key("controller" if pad else "keyboard", action)
+
+
+static func binding_events(action: StringName, pad: bool) -> Array[InputEvent]:
+	var result: Array[InputEvent] = []
+	for event in InputMap.action_get_events(action):
+		if is_pad_event(event) == pad:
+			result.append(event)
+	return result
+
+
+static func _save_bindings(next: ConfigFile) -> Error:
+	var error := next.save(BINDINGS_PATH)
+	if error == OK:
+		_custom = next
+		_apply_bindings()
+	return error
+
+
+static func _apply_bindings() -> void:
+	release_all()
+	for action in ALL:
+		InputMap.action_erase_events(action)
+		for event: InputEvent in _defaults[action]:
+			if not has_override(action, is_pad_event(event)):
+				InputMap.action_add_event(action, event)
+		for section in ["keyboard", "controller"]:
+			var values: Variant = _custom.get_value(section, action, [])
+			if not values is Array:
+				continue
+			for value in values:
+				if value is Vector2i:
+					var event := _decode(value)
+					if event != null and accepts_binding(action, event) and is_pad_event(event) == (section == "controller"):
+						InputMap.action_add_event(action, event)
+
+
+static func _encode_list(events: Array[InputEvent]) -> Array[Vector2i]:
+	var values: Array[Vector2i] = []
+	for event in events:
+		values.append(_encode(event))
+	return values
+
+
+static func _encode(event: InputEvent) -> Vector2i:
+	if event is InputEventKey:
+		return Vector2i(0, event.physical_keycode)
+	if event is InputEventJoypadButton:
+		return Vector2i(1, event.button_index)
+	var motion := event as InputEventJoypadMotion
+	return Vector2i(2 if motion.axis_value < 0.0 else 3, motion.axis)
+
+
+static func _decode(value: Vector2i) -> InputEvent:
+	match value.x:
+		0:
+			if value.y > 0:
+				return _key(value.y as Key)
+		1:
+			if value.y >= 0 and value.y < JOY_BUTTON_MAX:
+				return _button(value.y as JoyButton)
+		2, 3:
+			if value.y >= 0 and value.y < JOY_AXIS_MAX:
+				return _axis(value.y as JoyAxis, -1.0 if value.x == 2 else 1.0)
+	return null
 
 
 ## Menu actions. Adds only what is missing, so calling this again never duplicates an event.

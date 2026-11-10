@@ -212,7 +212,7 @@ func _draw() -> void:
 			dodge_center + Vector2(16, -22)]), Color.WHITE, 5.0)
 	draw_polyline(PackedVector2Array([dodge_center + Vector2(-16, -8), dodge_center + Vector2(0, 8),
 			dodge_center + Vector2(16, -8)]), Color.WHITE, 5.0)
-	draw_string(font, dodge_center + Vector2(-dr, 34.0), "DODGE", HORIZONTAL_ALIGNMENT_CENTER,
+	draw_string(font, dodge_center + Vector2(-dr, 34.0), "ROLL", HORIZONTAL_ALIGNMENT_CENTER,
 			dr * 2.0, 20, Color.WHITE)
 	if hero != null:
 		var charges := hero.max_charges()

@@ -16,6 +16,17 @@ extends Resource
 ## Aim assist: nearest enemy inside a cone this wide, centred on facing, snaps the swing toward it.
 @export var aim_cone_deg: float = 90.0
 
+@export_group("Stamina")
+@export var stamina_max: float = 100.0
+@export var stamina_regen: float = 28.0
+@export var stamina_regen_delay: float = 0.65
+@export var stamina_light_cost: float = 12.0
+@export var stamina_heavy_cost: float = 26.0
+@export var stamina_roll_cost: float = 18.0
+## Stamina per point of incoming damage on a normal block.
+@export var stamina_block_bare: float = 1.0
+@export var stamina_block_shield: float = 0.55
+
 @export_group("Light attack")
 @export var light_damage: float = 10.0
 @export var light_reach: float = 75.0
