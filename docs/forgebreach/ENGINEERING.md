@@ -19,6 +19,8 @@
 5. A single arena must start, play, pause, defeat/win and retry without mouse. **Stop and hand commit to QA.**
 
 ## Milestone 2 — three-stage physical-door vertical slice
+
+**Approved design content:** see `CONTENT_WORKSHOP.md`. For the slice, prefer Gatehouse → Blood Kennels/Hall of Banners variant → convergence at a third room. Implement only the minimum enemy profiles needed for the slice (Pike Sentinel and War Hound first); defer Warden's shield subsystem, Herald support buff, Chain Penitent and Cinder Forge heat hazards until after the core door/save transition is proven. Existing grunt/captain may stand in temporarily while wiring the loop.
 1. Introduce RunDirector/RunState and ArenaCatalog (names flexible). Keep combat rules owned by Game/Hero/Enemy; move progression/door state out of low-level combat.
 2. Add `ROOM_CLEAR` and `DOOR_CHOICE` states separate from FIGHTING, VICTORY and DEFEAT. Door collisions and button prompts must work only after enemies are cleared.
 3. Two **physical** doors in arena world coordinates and a focused preview with real enemy/reward differences. A proximity + Interact commits exactly once and transfers to one authored next-stage variant.
@@ -26,7 +28,7 @@
 5. Save at stable stage boundaries and recover on boot. **Stop and hand commit to QA.**
 
 ## Milestone 3 — finite 10-stage campaign
-- Four arena templates, two visual themes, 2 added regular enemy identities maximum, stage-5 champion, stage-10 final boss with two readable phases.
+- Five approved handcrafted arenas and five additional regular enemy identities (see `CONTENT_WORKSHOP.md`), stage-5 champion, stage-10 final boss with two readable phases.
 - Every door variant resolves to a real encounter and terminates. All branch paths reach the final encounter. No unbounded procedural population.
 - Intro/onboarding, settings, pause, death, restart, completion, credits, run statistics and replay.
 - Use data-driven, validated content IDs instead of hardcoding every branch in Game.

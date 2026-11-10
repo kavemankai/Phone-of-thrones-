@@ -13,10 +13,10 @@ A premium, finite, single-player, controller-first arena-combat game. Clear a co
 | Total sequential stages | **10** |
 | Mandatory champion stage | **5** |
 | Mandatory final boss stage | **10** |
-| Reusable handcrafted arena layouts | **4** |
-| Visual environmental themes | **2** |
+| Reusable handcrafted arena layouts | **5 new** named arenas; legacy prototype arena remains a development/test map |
+| Visual environmental themes | Dark-medieval fortress; lighting/props may vary without creating extra gameplay layouts |
 | Existing playable weapons | Sword, Spear, Axe, Daggers, Zweihander |
-| Regular enemy identities | Existing grunt + at most **2 new** |
+| Regular enemy identities | Existing grunt **plus 5 new** archetypes, defined in `CONTENT_WORKSHOP.md` |
 | Boss identities | Existing captain adapted as stage-5 champion + final boss with readable second phase |
 | Doors after ordinary stages | Up to **2**, each has a truthful encounter and reward preview |
 | Ending | Final victory screen/short closing presentation, credits, statistics and replay |
@@ -49,10 +49,14 @@ Carry forward the v0.9 mechanical base: five distinct weapon timings, dodge wind
 Define Godot InputMap actions rather than scattering raw physical key/controller button queries. Support Xbox-compatible pads first; generic pads and PlayStation-style labels where detected. Handle unplug, focus loss, held-input reset and predictable menu focus. Keyboard secondary controls must remain functional. Do not show touchscreen controls in desktop builds.
 
 ## Arena format and presentation
-Native 1280×720 base; scale to 1920×1080 and 2560×1440 without distorting combat geometry. Preserve fixed elevated isometric view with a fully visible arena. Use four deliberate templates (open, corner-pillars, split-cover, centre choke/wide flanks). Physical obstacles require real authoritative collision/pathing and attack-block checks; otherwise implement them as non-colliding decoration. Two complementary atmospheric palettes. Combat HUD: HP, guard, dodge charges, loadout, stage number, remaining enemies. Controller glyphs, highlighted focus, readable boss telegraphs and door icons.
+Native 1280×720 base; scale to 1920×1080 and 2560×1440 without distorting combat geometry. Preserve fixed elevated isometric view with a fully visible arena. Use the five approved fixed arenas in `CONTENT_WORKSHOP.md`: Shattered Gatehouse, Blood Kennels, Hall of Banners, Cinder Forge and Crown Pit. Physical obstacles require real authoritative collision/pathing and attack-block checks; otherwise implement them as non-colliding decoration. Two complementary atmospheric palettes. Combat HUD: HP, guard, dodge charges, loadout, stage number, remaining enemies. Controller glyphs, highlighted focus, readable boss telegraphs and door icons.
 
 ## Save/restart
 Versioned stable checkpoint written to `user://` on each room transition/reward settlement. Persist weapon, shield, current stage, HP, route history, capped run bonuses and a stable stage-entry snapshot. No mid-combat snapshot in v1.0. Quitting mid-battle resumes at that arena's **entry** with original entry health/bonuses; never award the same door reward twice. Corrupt/incompatible save must not be silently overwritten. Defeat offers new run/retry without requiring grind.
+
+## Approved enemy and arena expansion (2026-11-10)
+
+Five new regular enemy types and five fixed arenas were approved as design scope after the initial v1 brief. `CONTENT_WORKSHOP.md` is the implementation reference. This revision increases content variety, not campaign length: the ten-stage route, existing five weapons, stage-5 champion and stage-10 final boss remain unchanged. Do not implement all ten stages before the three-room vertical slice is proven; treat the new hazards, shields and support buffs as later content work.
 
 ## Out of scope
 Endless mode, open world, procedural maze generation, branching story, co-op, online leaderboards, army AI, additional weapons, collectible gear/inventory, shops, currency economy, monetization, external AI/runtime services, high-end cinematic pipeline and platform-console certification.

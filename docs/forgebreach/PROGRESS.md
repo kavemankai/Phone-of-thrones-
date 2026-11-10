@@ -88,3 +88,8 @@ The first [FORGEBREACH CI workflow](https://github.com/kavemankai/Phone-of-thron
 - **Physical gamepad acceptance: PENDING.** No real Windows execution, controller comfort, 1080p legibility or end-of-fight A/Enter timing sweep was recorded. See [hardware issue #15](https://github.com/kavemankai/Phone-of-thrones-/issues/15). Do not treat software success as full M1 hardware signoff.
 - **QA branch integrated.** Pull request [#11](https://github.com/kavemankai/Phone-of-thrones-/pull/11) merged into this development branch; production gameplay source was not changed by QA. The prior failed QA assertions were harness-state mistakes (not a proven gameplay defect); corrected tests retained the actual controller A event assertion.
 - M2 issue #4 remains not started. Finish the controller hardware smoke before unconditional M2 acceptance. The next implementation step is a three-arena door-choice slice after signoff.
+
+### Approved content workshop — 2026-11-10
+Five enemy archetypes (Iron Warden, Pike Sentinel, Chain Penitent, War Hound, War Herald) and five fixed arenas (Shattered Gatehouse, Blood Kennels, Hall of Banners, Cinder Forge, Crown Pit) are now approved **design scope**. See `CONTENT_WORKSHOP.md`. No corresponding enemy AI, arenas, transitions or campaign stages are claimed as implemented merely because the design is documented. The existing 10-stage campaign scope is unchanged.
+
+**Next gameplay task:** issue #4, three-room physical-door vertical slice, with stable stage-boundary saves and distinct door choices. Reuse proven v0.9 fighting systems. Pending physical M1 controller smoke test remains recorded in issue #15; do not claim it completed.

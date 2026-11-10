@@ -18,7 +18,7 @@ You are the **gameplay implementation agent**, using the strongest Claude Code m
 - Windows PC first; controller first; 16:9 landscape; keyboard secondary; no phone UI in the PC presentation.
 - Godot 4.6.2 + existing isometric combat architecture, not Unity, not an engine rewrite.
 - Ten finite encounter stages, with an obligatory champion at stage 5 and final boss at stage 10; two meaningful physical exit-door choices after ordinary stages where a choice is applicable.
-- Four reusable handcrafted arena layouts, two visual themes, five existing weapons, two new ordinary enemy identities maximum.
+- Five approved handcrafted arenas and five new ordinary enemy archetypes in `docs/forgebreach/CONTENT_WORKSHOP.md`, plus the original grunt and five existing weapons. These are CONTENT targets, not instructions to bypass the three-room slice gate.
 - No endless progression, open world, procedural maze, inventory, online systems, commerce or new metagame economy.
 - Save only at stable arena boundaries; victory must lead to a genuine ending and credits.
 
