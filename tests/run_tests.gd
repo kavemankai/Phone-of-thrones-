@@ -762,16 +762,17 @@ func test_isometric_view() -> void:
 			above = false
 	check("enemies start above the hero on the screen", above)
 
-	# Whole diamond sits inside the area above the control band.
+	# Desktop arena must fit above the actual HUD, not a legacy mobile touch-band
+	# percentage. This enables a future larger arena while preserving visible controls.
 	var vp := g.get_viewport().get_visible_rect().size
-	var band_top := vp.y * (1.0 - g.tuning.control_band_fraction)
+	var hud_top := vp.y - g.hud.bar_height
 	var fits := true
 	for corner in [Vector2.ZERO, Vector2(a.x, 0), Vector2(0, a.y), a]:
 		var sp := g.arena_root.transform * Iso.to_screen(corner)
-		if sp.x < 0.0 or sp.x > vp.x or sp.y < 0.0 or sp.y > band_top:
+		if sp.x < 0.0 or sp.x > vp.x or sp.y < 0.0 or sp.y > hud_top:
 			fits = false
-			print("      corner off screen: ", corner, " -> ", sp)
-	check("all four arena corners are on screen, above the control band", fits)
+			print("      corner outside active arena/HUD-safe area: ", corner, " -> ", sp)
+	check("all four arena corners fit above the active HUD strip", fits)
 	check("scene tree is ArenaRoot > IsoLayer > hero and enemies", g.hero.get_parent() == g.iso_layer and g.enemies[0].get_parent() == g.iso_layer and g.iso_layer.get_parent() == g.arena_root)
 	g.queue_free()
 
