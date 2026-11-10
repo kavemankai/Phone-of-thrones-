@@ -33,3 +33,11 @@ Date, milestone, commit SHA, code delivered, CI URL, QA sign-off, physical tests
 
 ### Automated baseline verification
 The first [FORGEBREACH CI workflow](https://github.com/kavemankai/Phone-of-thrones-/actions/runs/42774512534) completed successfully on 2026-11-10. It exported a Windows desktop artifact and retained QA logs. It did not perform physical controller tests, run the Windows binary, change UI orientation, or implement arena progression; those remain in M1 and later. 
+
+### Claude Code handover setup
+- Project-wide instructions: root `CLAUDE.md` (loaded at session start).
+- Manual gameplay skill: `.claude/skills/forgebreach-takeover/SKILL.md`, invoke `/forgebreach-takeover`.
+- Manual QA skill: `.claude/skills/forgebreach-qa/SKILL.md`, invoke `/forgebreach-qa` **in a separate session with a lower-cost model**.
+- Standalone first-turn prompt and cloud-session fallback: `docs/forgebreach/TAKEOVER_PROMPT.md`.
+- Both skills use `disable-model-invocation: true`, so they do not consume their full context until explicitly invoked.
+- CI pipeline additionally accepts pull requests targeting the implementation branch, so QA-only child PRs can be verified before merging.

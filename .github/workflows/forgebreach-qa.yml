@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/forgebreach-controller-arena-crawl
+  pull_request:
+    branches:
+      - feature/forgebreach-controller-arena-crawl
   workflow_dispatch:
 
 permissions:

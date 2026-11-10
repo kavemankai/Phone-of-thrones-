@@ -1,6 +1,6 @@
 # FORGEBREACH — Claude Code gameplay assignment
 
-Read `docs/forgebreach/START_HERE.md`, `GAME_SPEC.md`, `ENGINEERING.md`, and `QA_PROTOCOL.md` before editing source.
+Read `docs/forgebreach/START_HERE.md`, `GAME_SPEC.md`, `ENGINEERING.md`, and `QA_PROTOCOL.md` before editing source. To resume a gameplay task, invoke `/forgebreach-takeover` (project skill); lower-cost QA uses `/forgebreach-qa` in a separate session. See `docs/forgebreach/TAKEOVER_PROMPT.md` for an ordinary-text fallback.
 
 ## Your role
 You are the **gameplay implementation agent**, using the strongest Claude Code model for *new game code*. Your assignment is controller-first PC play and the finite interconnected arena-crawl. You are **not** the test-runner, QA analyst, release administrator or project manager.
