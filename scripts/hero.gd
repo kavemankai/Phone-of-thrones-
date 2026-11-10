@@ -638,22 +638,39 @@ func _draw() -> void:
 			draw_arc(Vector2.ZERO, r + 8.0, -PI * 0.5, -PI * 0.5 + TAU * charge_progress(), 32,
 					Color(1, 1, 1, 0.8), 3.0)
 
+	var heading := facing * (r + 8.0)
+	draw_line(heading * 0.73, heading, Color(0.65, 0.88, 1.0), 3.0)
 	# Upright pass: the body stands on the ground point.
 	draw_set_transform_matrix(Iso.upright())
-	var height := r * 2.0
-	var side := FLASH_COLOR if flash > 0.0 else BODY_COLOR
+	var height := r * 3.6
+	var heading_screen := Iso.to_screen(facing).normalized()
+	var tint := Color(1.32, 1.22, 1.16) if flash > 0.0 else Color.WHITE
 	if state == State.DODGE:
-		_draw_roll(r, side)
+		var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
+		var direction := Iso.to_screen(dodge_dir).normalized()
+		ForgeArt.actor(self, ForgeArt.HERO_ROLL, height * 0.63, direction, tint,
+				Vector2(0.0, -sin(progress * PI) * 8.0), direction.x * 0.65)
 		return
 	if state == State.DEAD:
-		side = Color(0.3, 0.35, 0.45)
+		ForgeArt.actor(self, ForgeArt.ACTORS.hero, height, heading_screen,
+				Color(0.54, 0.55, 0.58), Vector2(-height * 0.36, -3.0), PI * 0.46)
+		return
 	var shield_pos := _shield_offset(height)
-	# A raised shield is always held in front; a carried one is hidden behind the body when
-	# it is on the far side.
 	var shield_in_front := state == State.BLOCK or shield_pos.y > -height * 0.5
 	if has_shield and not shield_in_front:
-		_draw_shield(shield_pos, state == State.BLOCK)
-	Iso.draw_cylinder(self, r, height, side, Color(0.05, 0.1, 0.25))
+		_draw_shield(shield_pos, false)
+	var pose: Texture2D = ForgeArt.ACTORS.hero
+	var stride := 0.0
+	match state:
+		State.WINDUP:
+			pose = ForgeArt.HERO_WINDUP
+		State.ACTIVE, State.RECOVER:
+			pose = ForgeArt.HERO_STRIKE
+		State.IDLE:
+			if input.move_vector().length_squared() > 0.05:
+				pose = ForgeArt.HERO_RUN
+				stride = absf(sin(Time.get_ticks_msec() * 0.016)) * 3.0
+	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride))
 	if has_shield and shield_in_front:
 		_draw_shield(shield_pos, state == State.BLOCK)
 	if state == State.GUARD_BREAK:
@@ -662,30 +679,13 @@ func _draw() -> void:
 		for i in 3:
 			var a := spin + i * TAU / 3.0
 			draw_circle(Vector2(0.0, -height - 8.0) + Vector2(cos(a), sin(a) * 0.4) * r * 0.9, 3.5, Color(1.0, 0.9, 0.3))
-	# Facing marker on top of the body.
-	var top := Vector2(0.0, -height)
-	var tip := top + Iso.to_screen(facing) * r * 0.8
-	draw_line(top, tip, Color(1, 1, 1), 3.0)
-	draw_circle(tip, 3.0, Color(1, 1, 1))
-	_draw_weapon(height * 0.55, attacking)
+	_draw_weapon(height * 0.48, attacking)
 	if cue_left > 0.0:
 		var cue_pos := Vector2(-110.0, -height - 28.0)
 		draw_string(ThemeDB.fallback_font, cue_pos + Vector2(1.0, 2.0), cue_text,
 				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, Color(0.0, 0.0, 0.0, 0.95))
 		draw_string(ThemeDB.fallback_font, cue_pos, cue_text,
 				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, cue_color)
-
-
-func _draw_roll(r: float, tint: Color) -> void:
-	var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
-	var forward := Iso.to_screen(dodge_dir).normalized()
-	var center := Vector2(0.0, -r * 0.8)
-	draw_circle(center, r * 0.88, tint)
-	draw_arc(center, r * 0.88, 0.0, TAU, 24, Color(0.05, 0.1, 0.25), 2.0)
-	var seam := forward * (cos(progress * TAU) * r * 0.72)
-	draw_line(center - seam, center + seam, Color(0.78, 0.88, 1.0), 3.0)
-	draw_circle(center + forward * (sin(progress * TAU) * r * 0.57), r * 0.27,
-			Color(0.78, 0.88, 1.0))
 
 
 ## Screen-space centre of the shield: raised in front of the body, or carried at its left side.
@@ -697,22 +697,14 @@ func _shield_offset(height: float) -> Vector2:
 
 
 func _draw_shield(center: Vector2, raised: bool) -> void:
-	var k := 1.0 if raised else 0.8
-	var w := radius * 1.15 * k
-	var h := radius * 1.5 * k
-	var body := PackedVector2Array([
-		center + Vector2(-w, -h), center + Vector2(w, -h), center + Vector2(w, h * 0.1),
-		center + Vector2(0.0, h * 1.1), center + Vector2(-w, h * 0.1)])
-	var face := Color(0.62, 0.68, 0.8)
+	var h := radius * (2.7 if raised else 2.2)
+	var w := h * float(ForgeArt.SHIELD.get_width()) / ForgeArt.SHIELD.get_height()
+	var tint := Color.WHITE
 	if parry_flash > 0.0:
-		face = Color(1.0, 0.85, 0.3)
+		tint = Color(1.5, 1.32, 0.72)
 	elif block_flash > 0.0:
-		face = Color(1, 1, 1)
-	draw_colored_polygon(body, face)
-	var outline := body.duplicate()
-	outline.append(body[0])
-	draw_polyline(outline, Color(0.15, 0.18, 0.3), 2.5)
-	draw_circle(center + Vector2(0.0, -h * 0.1), w * 0.3, Color(0.35, 0.4, 0.55))
+		tint = Color(1.42, 1.42, 1.42)
+	draw_texture_rect(ForgeArt.SHIELD, Rect2(center - Vector2(w, h) * 0.5, Vector2(w, h)), false, tint)
 
 
 func _draw_weapon(anchor_height: float, attacking: bool) -> void:
@@ -720,12 +712,11 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 		# Bare guard: the weapon is held across the body.
 		var c := Vector2(0.0, -anchor_height) + Iso.to_screen(facing) * radius * 1.0
 		var half := Iso.to_screen(facing.rotated(PI * 0.5)).normalized() * (radius + weapon.length) * 0.55
-		draw_line(c - half, c + half, weapon.color, weapon.thickness + 1.0)
+		ForgeArt.weapon(self, weapon.id, c - half, c + half)
 		return
 	var base := facing.angle()
 	var ang := base + 0.6
 	var length := radius + weapon.length
-	var width := weapon.thickness
 	if attacking:
 		var half := deg_to_rad(cur_attack.arc) * 0.5
 		ang = base
@@ -738,10 +729,9 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 				ang = base + half
 		if cur_attack.heavy:
 			length += 8.0
-			width += 2.0
 	var angles: Array = [ang - 0.35, ang + 0.35] if weapon.dual else [ang]
 	var anchor := Vector2(0.0, -anchor_height)
 	for blade_angle in angles:
 		var dir := Vector2.from_angle(blade_angle)
-		draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * length,
-				weapon.color, width)
+		ForgeArt.weapon(self, weapon.id, anchor + Iso.to_screen(dir) * radius * 0.6,
+				anchor + Iso.to_screen(dir) * length)
