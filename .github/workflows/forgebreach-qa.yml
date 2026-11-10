@@ -56,6 +56,12 @@ jobs:
           set -o pipefail
           godot --headless --path . --script tests/forgebreach_m1_qa.gd 2>&1 | tee build/qa/m1-controller-tests.log
 
+      - name: Run independent M2 arena and checkpoint checks
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/forgebreach_m2_qa.gd 2>&1 | tee build/qa/m2-campaign-tests.log
+
       - name: Boot scene for 120 frames
         shell: bash
         run: |
