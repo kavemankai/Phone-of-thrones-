@@ -52,6 +52,13 @@ New checks worth adding (QA owns them): actions exist after `Game._ready`; a syn
 
 Next smallest gameplay task after QA sign-off: issue #4, RunState/ArenaCatalog and the `ROOM_CLEAR` state.
 
+### M1 QA fixes (2026-11-10): issues #14, #12, #13
+QA: pending. Not parsed, run or built by the gameplay agent. Files: `scripts/input_actions.gd`, `scripts/menu_panel.gd`, `scripts/game.gd`.
+- #14: `InputActions.ensure()` now adds, only where missing, gamepad A to `ui_accept`, B to `ui_cancel`, and D-pad plus left stick to `ui_left/right/up/down` (all devices). Enter, Escape and the arrow keys are added the same way if absent. Repeat calls add nothing.
+- #12: Space is removed from `ui_accept`. Space still dodges; Enter and gamepad A confirm. A Space press can no longer activate Retry, Resume or any other button.
+- #13: the title/result panel has a focusable "Quit to desktop" button under Fight/Retry. It needs two presses ("Press again to quit"); moving focus away or re-showing the panel cancels the first. Fight/Retry stays the default focus. `MenuPanel.quit_requested` is the signal.
+- Concerns: `ensure()` edits the global InputMap, so Space no longer confirms anywhere in the game. Whether a real A/Cross press activates a focused button is still unproven on hardware. The menu hint lost its third line to make room for Quit.
+
 ### Future checkpoint template
 Date, milestone, commit SHA, code delivered, CI URL, QA sign-off, physical tests, next smallest implementation task.
 

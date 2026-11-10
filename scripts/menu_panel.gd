@@ -6,6 +6,7 @@ extends Control
 ## D-pad or left stick moves the focus, A selects.
 
 signal fight_requested(mode: int, weapon_index: int, shield: bool)
+signal quit_requested
 
 const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 
@@ -19,6 +20,9 @@ var _title: Label
 var _info: Label
 var _weapon_desc: Label
 var _fight_button: Button
+var _quit_button: Button
+## Quit takes two presses; moving the focus away cancels the first.
+var _quit_armed := false
 var _weapon_row: HBoxContainer
 var _shield_button: Button
 var _attack_mode_button: Button
@@ -132,6 +136,17 @@ func _ready() -> void:
 	wrap.add_child(_fight_button)
 	box.add_child(wrap)
 
+	_quit_button = Button.new()
+	_quit_button.custom_minimum_size = Vector2(340, 42)
+	_quit_button.add_theme_font_size_override("font_size", 20)
+	UiFocus.style(_quit_button)
+	_quit_button.pressed.connect(_on_quit_pressed)
+	_quit_button.focus_exited.connect(_disarm_quit)
+	var quit_wrap := CenterContainer.new()
+	quit_wrap.add_child(_quit_button)
+	box.add_child(quit_wrap)
+	_disarm_quit()
+
 	_hint = _label(18)
 	_hint.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(_hint)
@@ -216,6 +231,7 @@ func show_start() -> void:
 	_title.modulate = Color.WHITE
 	_info.text = "Pick a weapon, then fight."
 	_fight_button.text = "Fight"
+	_disarm_quit()
 	visible = true
 
 
@@ -225,6 +241,7 @@ func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_n
 	_info.text = "%s, %s.  Time %.1f s.  Health left %d." % [weapon_name, MODE_NAMES[m], seconds, ceili(hp_left)]
 	_fight_button.text = "Retry"
 	set_mode(m)
+	_disarm_quit()
 	visible = true
 
 
@@ -242,8 +259,22 @@ func set_prompt_style(style: InputPrompts.Style) -> void:
 func _refresh_hint() -> void:
 	if _hint == null:
 		return
-	_hint.text = "%s\n%s\nGuard just before impact to parry. Dodge passes through hits." % [
+	_hint.text = "%s\n%s" % [
 			InputPrompts.menu_hint(_style), InputPrompts.combat_line(_style, not split_attacks)]
+
+
+func _on_quit_pressed() -> void:
+	if not _quit_armed:
+		_quit_armed = true
+		_quit_button.text = "Press again to quit"
+		return
+	quit_requested.emit()
+
+
+func _disarm_quit() -> void:
+	_quit_armed = false
+	if _quit_button != null:
+		_quit_button.text = "Quit to desktop"
 
 
 ## Keeps the focus on the panel while it is shown; the primary button is the default.

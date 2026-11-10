@@ -141,6 +141,7 @@ func _ready() -> void:
 		split_attacks = menu.split_attacks
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
+	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
 	ui.add_child(pause_panel)
 	pause_panel.resume_requested.connect(resume_game)

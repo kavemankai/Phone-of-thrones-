@@ -2,7 +2,9 @@ class_name InputActions
 extends RefCounted
 ## The one table of game input actions. ensure() registers them in Godot's InputMap, so no
 ## other script asks for a physical key or pad button. Bindings match every device (-1).
-## Menu navigation uses Godot's built-in ui_* actions (D-pad, left stick, arrows, A, Enter).
+## Menu navigation uses Godot's built-in ui_* actions. Their default bindings are not relied
+## on: ensure() adds the pad bindings the menus need (A confirm, B back, D-pad and left stick
+## to move the focus) and takes Space off ui_accept, because Space is the dodge key.
 
 const MOVE_LEFT := &"fb_move_left"
 const MOVE_RIGHT := &"fb_move_right"
@@ -48,6 +50,51 @@ static func ensure() -> void:
 	_bind(GUARD, [_key(KEY_K), _button(JOY_BUTTON_LEFT_SHOULDER)])
 	_bind(PAUSE, [_key(KEY_ESCAPE), _key(KEY_P), _button(JOY_BUTTON_START)])
 	_bind(FULLSCREEN, [_key(KEY_F11)])
+	_ensure_ui()
+
+
+## Menu actions. Adds only what is missing, so calling this again never duplicates an event.
+static func _ensure_ui() -> void:
+	_add_missing(&"ui_accept", [_key(KEY_ENTER), _button(JOY_BUTTON_A)])
+	_add_missing(&"ui_cancel", [_key(KEY_ESCAPE), _button(JOY_BUTTON_B)])
+	_add_missing(&"ui_left", [_key(KEY_LEFT), _button(JOY_BUTTON_DPAD_LEFT), _axis(JOY_AXIS_LEFT_X, -1.0)])
+	_add_missing(&"ui_right", [_key(KEY_RIGHT), _button(JOY_BUTTON_DPAD_RIGHT), _axis(JOY_AXIS_LEFT_X, 1.0)])
+	_add_missing(&"ui_up", [_key(KEY_UP), _button(JOY_BUTTON_DPAD_UP), _axis(JOY_AXIS_LEFT_Y, -1.0)])
+	_add_missing(&"ui_down", [_key(KEY_DOWN), _button(JOY_BUTTON_DPAD_DOWN), _axis(JOY_AXIS_LEFT_Y, 1.0)])
+	# One Space press must never both dodge and confirm a menu button (Retry, Resume).
+	_remove_key(&"ui_accept", KEY_SPACE)
+
+
+static func _add_missing(action: StringName, events: Array) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	for ev: InputEvent in events:
+		if not _has_equivalent(action, ev):
+			InputMap.action_add_event(action, ev)
+
+
+## True when the action already has this key, pad button or stick direction on any device.
+static func _has_equivalent(action: StringName, wanted: InputEvent) -> bool:
+	for have: InputEvent in InputMap.action_get_events(action):
+		if wanted is InputEventKey and have is InputEventKey:
+			var code: Key = wanted.physical_keycode
+			if have.physical_keycode == code or have.keycode == code:
+				return true
+		elif wanted is InputEventJoypadButton and have is InputEventJoypadButton:
+			if have.button_index == wanted.button_index:
+				return true
+		elif wanted is InputEventJoypadMotion and have is InputEventJoypadMotion:
+			if have.axis == wanted.axis and signf(have.axis_value) == signf(wanted.axis_value):
+				return true
+	return false
+
+
+static func _remove_key(action: StringName, code: Key) -> void:
+	if not InputMap.has_action(action):
+		return
+	for have: InputEvent in InputMap.action_get_events(action):
+		if have is InputEventKey and (have.physical_keycode == code or have.keycode == code):
+			InputMap.action_erase_event(action, have)
 
 
 static func _bind(action: StringName, events: Array, deadzone := 0.5) -> void:
