@@ -47,6 +47,12 @@ jobs:
           set -o pipefail
           godot --headless --path . --script tests/run_tests.gd 2>&1 | tee build/qa/combat-tests.log
 
+      - name: Run independent M1 controller and menu checks
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/forgebreach_m1_qa.gd 2>&1 | tee build/qa/m1-controller-tests.log
+
       - name: Boot scene for 120 frames
         shell: bash
         run: |
