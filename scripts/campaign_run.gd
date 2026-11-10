@@ -33,6 +33,11 @@ var split := false
 var directional := false
 var route := PackedInt32Array()
 var guard_bonus := 0
+## Pickups taken so far (Boon ids), in the order taken.
+var boons := PackedStringArray()
+## Fixed when the run starts. Decides which pickup each door offers, so a reloaded run
+## shows the same doors.
+var run_seed := 0
 
 
 func room() -> Dictionary:
@@ -44,11 +49,39 @@ func choices() -> Array:
 
 
 func advance(choice: int, current_hp: float, max_hp: float) -> void:
+	var gained := offer(choice)
+	if gained != "":
+		boons.append(gained)
 	hp = minf(max_hp, current_hp + float(choices()[choice].heal))
 	guard_bonus = mini(16, guard_bonus + guard_reward(choice))
 	stage += 1
 	variant = choice
 	route.append(choice)
+
+
+## The pickup behind a door of the current room: two different ones not yet owned, chosen
+## by the run seed and the stage. Empty when the catalogue is used up.
+func offer(choice: int) -> String:
+	var pool: PackedStringArray = []
+	for id: String in Boon.ALL:
+		if not boons.has(id):
+			pool.append(id)
+	if pool.is_empty():
+		return ""
+	if pool.size() == 1:
+		return pool[0] if choice == 0 else ""
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([run_seed, stage])
+	var first := rng.randi_range(0, pool.size() - 1)
+	var second := (first + 1 + rng.randi_range(0, pool.size() - 2)) % pool.size()
+	return pool[first if choice == 0 else second]
+
+
+func boon_set() -> Dictionary:
+	var owned := {}
+	for id in boons:
+		owned[id] = true
+	return owned
 
 
 func guard_reward(choice: int) -> int:
@@ -64,6 +97,8 @@ func save() -> Error:
 	file.set_value("run", "entry", [stage, variant, hp, weapon_index, shield, split, directional])
 	file.set_value("run", "route", route)
 	file.set_value("run", "guard_bonus", guard_bonus)
+	file.set_value("run", "boons", boons)
+	file.set_value("run", "seed", run_seed)
 	var temp := CHECKPOINT + ".tmp"
 	var error := file.save(temp)
 	if error == OK:
@@ -96,7 +131,19 @@ static func read() -> CampaignRun:
 	var bonus: Variant = file.get_value("run", "guard_bonus", 0)
 	if not bonus is int or bonus < 0 or bonus > 16:
 		return null
+	# Pickups were added after the first checkpoints: a file without them is a run with none.
+	var saved_boons: Variant = file.get_value("run", "boons", PackedStringArray())
+	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0]:
+		return null
+	for i in saved_boons.size():
+		if not Boon.exists(saved_boons[i]) or saved_boons.slice(0, i).has(saved_boons[i]):
+			return null
+	var saved_seed: Variant = file.get_value("run", "seed", 0)
+	if not saved_seed is int:
+		return null
 	var result := CampaignRun.new()
+	result.boons = saved_boons
+	result.run_seed = saved_seed
 	result.stage = entry[0]
 	result.variant = entry[1]
 	result.hp = entry[2]
