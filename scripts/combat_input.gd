@@ -18,6 +18,8 @@ var block_key := false
 var attack_pressed := false
 var attack_released := false
 var dodge_pressed := false
+## Separate-button trial: one-step heavy action, independent of tap/hold charging.
+var heavy_pressed := false
 
 
 func attack_down() -> bool:
@@ -82,10 +84,15 @@ func press_dodge() -> void:
 	dodge_pressed = true
 
 
+func press_heavy() -> void:
+	heavy_pressed = true
+
+
 func end_step() -> void:
 	attack_pressed = false
 	attack_released = false
 	dodge_pressed = false
+	heavy_pressed = false
 
 
 func clear() -> void:

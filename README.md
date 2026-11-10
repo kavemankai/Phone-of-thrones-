@@ -1,5 +1,15 @@
 # Shieldwall combat test
 
+## Version 0.9 combat-polish candidate (branch: combat-polish-v0.9)
+
+This branch adds a controlled A/B playtest rather than replacing the established 0.8 feel. The start screen now has two independent toggles. **Attacks: HOLD** retains tap-for-light / hold-for-heavy. **Attacks: SPLIT** shows a separate HEAVY button and performs light and heavy attacks on button-down. **Guard: ALL-ROUND** retains the 360-degree defence. **Guard: DIRECTIONAL** restricts shield/bare guard arcs to 140/110 degrees, uses parry windows of 0.30/0.23 s instead of 0.40/0.32 s, and applies 0.55x block-stun duration. Retry retains the selected trial modes; resetting the toggles returns to the original numbers.
+
+Defensive transitions (pressing dodge or guard, or releasing guard) are now processed before enemy strikes in each simulation slice. Enemy attacks still resolve before hero attack damage, so simultaneous killing blows still count as defeat. Readability additions include enlarged telegraph outlines, team/elite ground rings, a CAPTAIN label, hero combat cues and an A/B indicator in the HUD.
+
+**Verification status:** The first v0.9 GitHub Actions run used Godot 4.6.2 and reported **460 passed, 0 failed**, followed by a successful headless main-scene boot. The 0.8 results in TEST_REPORT.md remain separate historical results. An Android debug-build job is now included; its outcome must be checked separately. **No physical Android gameplay, frame-rate, audio or touch testing has been performed for v0.9.** See `docs/v0.9-playtest.md`.
+
+
+
 A Godot prototype for one question: does fighting melee enemies feel responsive and readable on a phone, with two thumbs? One hero with a choice of five weapons and an optional shield, one small arena, three identical enemies followed by a solo captain. Nothing from the larger Shieldwall game is in here.
 
 The original brief limited the test to one hero and identical enemies, and listed bosses, combos, blocking, stamina and perfect-timing rewards as out of scope. The weapons, the captain, blocking, the shield, the guard meter and the parry were added later on request, so the "does the core fight work" question is now mixed with "do the extras work". Use 1 Enemy mode with the Sword to test the original question on its own.

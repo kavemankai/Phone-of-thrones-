@@ -10,6 +10,8 @@ const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 var mode := 1
 var weapon_index := 0
 var shield := false
+var split_attacks := false
+var directional_guard := false
 
 var _title: Label
 var _info: Label
@@ -17,6 +19,8 @@ var _weapon_desc: Label
 var _fight_button: Button
 var _weapon_row: HBoxContainer
 var _shield_button: Button
+var _attack_mode_button: Button
+var _guard_mode_button: Button
 var _weapon_group := ButtonGroup.new()
 var _weapon_buttons: Array[Button] = []
 var _weapons: Array[Weapon] = []
@@ -36,7 +40,7 @@ func _ready() -> void:
 	add_child(center)
 
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 18)
+	box.add_theme_constant_override("separation", 12)
 	center.add_child(box)
 
 	_title = _label(56)
@@ -73,6 +77,24 @@ func _ready() -> void:
 	shield_wrap.add_child(_shield_button)
 	box.add_child(shield_wrap)
 
+	_attack_mode_button = Button.new()
+	_attack_mode_button.toggle_mode = true
+	_attack_mode_button.custom_minimum_size = Vector2(460, 62)
+	_attack_mode_button.add_theme_font_size_override("font_size", 25)
+	_attack_mode_button.pressed.connect(func(): set_split_attacks(_attack_mode_button.button_pressed))
+	var attack_wrap := CenterContainer.new()
+	attack_wrap.add_child(_attack_mode_button)
+	box.add_child(attack_wrap)
+
+	_guard_mode_button = Button.new()
+	_guard_mode_button.toggle_mode = true
+	_guard_mode_button.custom_minimum_size = Vector2(460, 62)
+	_guard_mode_button.add_theme_font_size_override("font_size", 25)
+	_guard_mode_button.pressed.connect(func(): set_directional_guard(_guard_mode_button.button_pressed))
+	var guard_wrap := CenterContainer.new()
+	guard_wrap.add_child(_guard_mode_button)
+	box.add_child(guard_wrap)
+
 	var mode_label := _label(22)
 	mode_label.text = "FIGHT"
 	mode_label.modulate = Color(1, 1, 1, 0.6)
@@ -102,11 +124,13 @@ func _ready() -> void:
 	box.add_child(wrap)
 
 	var hint := _label(21)
-	hint.text = "Left thumb: move.  ATTACK: tap = light, hold = heavy.\nBLOCK: hold to guard; raise it just before a hit to parry.\nDODGE: roll with brief invulnerability.\nDesktop: WASD / arrows, J attack, K block, Space dodge, Enter."
+	hint.text = "MOVE with left thumb. ATTACK tap/hold or split LIGHT/HEAVY.\nBLOCK before impact to parry. DODGE avoids hits.\nDesktop: WASD / arrows, J attack, K block, Space dodge."
 	hint.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(hint)
 
 	set_mode(mode)
+	set_split_attacks(split_attacks)
+	set_directional_guard(directional_guard)
 	show_start()
 
 
@@ -137,6 +161,21 @@ func set_weapon(i: int) -> void:
 func set_shield(on: bool) -> void:
 	shield = on
 	_refresh_shield()
+
+
+## A/B toggles; default values reproduce the 0.8 controls and all-round defence.
+func set_split_attacks(on: bool) -> void:
+	split_attacks = on
+	if _attack_mode_button != null:
+		_attack_mode_button.set_pressed_no_signal(on)
+		_attack_mode_button.text = "Attacks: SPLIT buttons" if on else "Attacks: HOLD for heavy"
+
+
+func set_directional_guard(on: bool) -> void:
+	directional_guard = on
+	if _guard_mode_button != null:
+		_guard_mode_button.set_pressed_no_signal(on)
+		_guard_mode_button.text = "Guard: DIRECTIONAL trial" if on else "Guard: ALL-ROUND original"
 
 
 ## A shield only works with a one-handed weapon.
