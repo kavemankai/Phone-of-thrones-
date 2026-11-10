@@ -474,8 +474,14 @@ func _move(dt: float, mult: float, turn := true) -> void:
 	var target := v * move_speed() * mult
 	var ramp := tuning.move_ramp_up if target.length_squared() >= velocity.length_squared() else tuning.move_ramp_down
 	velocity = velocity.move_toward(target, move_speed() / maxf(ramp, 0.001) * dt)
-	if turn and v.length() > 0.001:
-		facing = v.normalized()
+	if turn:
+		# The right stick sets the facing on its own. At rest, walking sets it; with both
+		# sticks at rest the last facing stays.
+		var aim := input.aim_vector()
+		if aim != Vector2.ZERO:
+			facing = aim
+		elif v.length() > 0.001:
+			facing = v.normalized()
 	if velocity.length_squared() > 0.000001:
 		position = _clamp_to_arena(position + velocity * dt)
 
