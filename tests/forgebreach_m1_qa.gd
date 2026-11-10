@@ -183,6 +183,9 @@ func _initialize() -> void:
     # Synthetic UI input is tested distinctly from synthetic combat input.
     # Call parse_input_event so Godot's own GUI processing activates the Button.
     g.menu.show_start()
+    # SceneTree.process_frame callbacks may resume before nodes' _process().
+    # Explicitly exercise the real menu focus guard after the UI is visible.
+    g.menu._process(0.0)
     await process_frame
     var focus := root.gui_get_focus_owner()
     _check("Fight has controller navigation focus by default", focus == g.menu._fight_button)
