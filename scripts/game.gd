@@ -56,6 +56,10 @@ var enemies: Array = []
 var campaign: CampaignRun
 var checkpoint_message := ""
 var _clear_delay := 0.0
+## Enemy groups still to enter the current campaign room.
+var _waves_left: Array = []
+## Seconds left to show the "reinforcements" banner.
+var wave_notice := 0.0
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -125,9 +129,15 @@ func _ready() -> void:
 	hero.swung.connect(func(heavy: bool): sfx.play("swing_heavy" if heavy else "swing_light"))
 	hero.hit_landed.connect(func(_e: Enemy, _h: bool): sfx.play("hit"))
 	hero.dodged.connect(func(): sfx.play("dodge"))
-	hero.damaged.connect(func(): sfx.play("hurt"))
-	hero.died.connect(func(): sfx.play("hurt"))
-	hero.blocked.connect(func(parried: bool): sfx.play("parry" if parried else "block"))
+	hero.damaged.connect(func():
+		sfx.play("hurt")
+		_count_hit())
+	hero.died.connect(func():
+		sfx.play("hurt")
+		_count_hit())
+	hero.blocked.connect(func(parried: bool):
+		sfx.play("parry" if parried else "block")
+		_count_parry(parried))
 	hero.guard_broken.connect(func(): sfx.play("guard_break"))
 
 	var ui := CanvasLayer.new()
@@ -152,7 +162,8 @@ func _ready() -> void:
 		split_attacks = menu.split_attacks
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
-	menu.campaign_requested.connect(_new_campaign)
+	menu.campaign_requested.connect(func(w: int, sh: bool):
+		_new_campaign(w, sh, CampaignRun.PLAN_OUTER_WALLS))
 	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
@@ -233,6 +244,8 @@ func _prepare_room(room_size: Vector2) -> void:
 	controls.reset()
 	_release_all_input()
 	paused = false
+	_waves_left = []
+	wave_notice = 0.0
 	tuning.arena_size = room_size
 	hero.arena_size = room_size
 	hero.arena_cover.clear()
@@ -275,8 +288,21 @@ func _begin_room() -> void:
 	_set_state(State.FIGHTING)
 
 
-func _new_campaign(w: int, shield: bool) -> void:
+func _count_hit() -> void:
+	if campaign != null and state == State.FIGHTING:
+		campaign.hits_taken += 1
+
+
+func _count_parry(parried: bool) -> void:
+	if parried and campaign != null and state == State.FIGHTING:
+		campaign.parries += 1
+
+
+## Starts a run. The menu starts the first ward; the default is the original three-room
+## slice, kept so its checks still describe what they were written for.
+func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE) -> void:
 	campaign = CampaignRun.new()
+	campaign.plan = plan
 	campaign.weapon_index = w
 	campaign.shield = shield
 	campaign.split = menu.split_attacks
@@ -310,17 +336,42 @@ func _start_campaign_room() -> void:
 	if arena_view.room_style < 0:
 		_test_room_size = tuning.arena_size
 	_prepare_room(room["size"])
-	arena_view.room_style = campaign.stage
+	arena_view.room_style = room.get("style", campaign.stage)
 	arena_view.has_doors = not campaign.choices().is_empty()
 	arena_view.room_ground = room.ground
 	arena_view.room_light = room.light
 	hero.arena_cover.assign(room.get("cover", []))
 	arena_view.cover.assign(hero.arena_cover)
 	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
-	var spots := tuning.enemy_spawns()
-	for i in room.foes.size():
-		_add_enemy(spots[i], i, CampaignRun.enemy_profile(room.foes[i], tuning, campaign.stage))
+	_waves_left = room.get("waves", []).duplicate()
+	wave_notice = 0.0
+	_spawn_group(room.foes, tuning.enemy_spawns())
 	_begin_room()
+
+
+func _spawn_group(kinds: Array, spots: Array[Vector2]) -> void:
+	for i in mini(kinds.size(), spots.size()):
+		_add_enemy(spots[i], enemies.size(), _campaign_profile(kinds[i]))
+
+
+func _campaign_profile(kind: String) -> EnemyProfile:
+	if kind == "gate_captain" and captain_profile != null:
+		return CampaignRun.boss_profile(captain_profile)
+	return CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+
+
+## The next group enters from whichever end of the room is farther from the hero.
+func _spawn_next_wave() -> void:
+	var kinds: Array = _waves_left.pop_front()
+	var spots := tuning.enemy_spawns()
+	var far_end := tuning.hero_spawn()
+	if far_end.distance_to(hero.position) > spots[0].distance_to(hero.position):
+		var centre := tuning.arena_size * 0.5
+		for i in spots.size():
+			spots[i] = centre * 2.0 - spots[i]
+	_spawn_group(kinds, spots)
+	wave_notice = 1.6
+	sfx.play("captain")
 
 
 func _restart_room() -> void:
@@ -380,6 +431,9 @@ func step(dt: float) -> void:
 
 func _sim_step(dt: float) -> void:
 	fight_time += dt
+	if campaign != null:
+		campaign.time += dt
+	_apply_auras()
 	# Input events arrive between simulation steps: honour a just-pressed dodge/block
 	# before collision, but still resolve enemy STRIKES before hero ATTACKS (tie = defeat).
 	hero.pre_resolve_defense()
@@ -396,6 +450,20 @@ func _sim_step(dt: float) -> void:
 	_check_outcome()
 
 
+## A living Herald speeds up the other living enemies inside its ring.
+func _apply_auras() -> void:
+	for e: Enemy in enemies:
+		e.speed_buff = 1.0
+	for source: Enemy in enemies:
+		if source.is_dead() or source.profile.aura_range <= 0.0:
+			continue
+		for e: Enemy in enemies:
+			if e == source or e.is_dead() or e.profile.aura_range > 0.0:
+				continue
+			if e.position.distance_to(source.position) <= source.profile.aura_range:
+				e.speed_buff = maxf(e.speed_buff, source.profile.aura_speed_mult)
+
+
 func _check_outcome() -> void:
 	# Defeat wins a tie: the hero dying on the same step as the last enemy is a loss.
 	if hero.is_dead():
@@ -404,6 +472,9 @@ func _check_outcome() -> void:
 	if enemies_alive() > 0 or intermission_active:
 		return
 	if campaign != null:
+		if not _waves_left.is_empty():
+			_spawn_next_wave()
+			return
 		if campaign.choices().is_empty():
 			if CampaignRun.read() != null:
 				var error := DirAccess.remove_absolute(CampaignRun.CHECKPOINT)
@@ -451,6 +522,7 @@ func _process(delta: float) -> void:
 		State.FIGHTING:
 			if paused:
 				return
+			wave_notice = maxf(0.0, wave_notice - delta)
 			_poll_devices()
 			step(delta)
 		State.ROOM_CLEAR:
@@ -468,14 +540,31 @@ func _process(delta: float) -> void:
 			hero.walk_clear_room(minf(delta, MAX_FRAME_DT))
 			_update_near_door()
 		State.RESULT:
+			wave_notice = 0.0
 			if result_timer > 0.0:
 				result_timer -= delta
 				if result_timer <= 0.0:
 					if campaign == null:
 						menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
 					else:
-						menu.show_campaign_result(outcome == Outcome.VICTORY, campaign.room().name)
+						_show_campaign_result()
 					menu.set_continue_available(CampaignRun.read() != null)
+
+
+func _show_campaign_result() -> void:
+	var won := outcome == Outcome.VICTORY
+	var seconds := int(campaign.time)
+	var totals := "Time %d:%02d      Hits taken %d      Parries %d" % [
+		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries]
+	var carried := Boon.titles(campaign.boons)
+	var pickups := "Pickups: " + (", ".join(carried) if not carried.is_empty() else "none")
+	if won:
+		var heading := "OUTER WALLS BREACHED" if campaign.plan == CampaignRun.PLAN_OUTER_WALLS \
+				else "SLICE COMPLETE"
+		menu.show_campaign_result(true, heading, "%s\n%s" % [totals, pickups])
+	else:
+		menu.show_campaign_result(false, "DEFEAT", "Checkpoint: %s  (room %d of %d)\n%s" % [
+			campaign.room().name, campaign.stage + 1, campaign.stage_count(), pickups])
 
 
 func _update_near_door() -> void:
@@ -617,6 +706,7 @@ func pause_game(reason := "") -> void:
 	_guard_held_over_pause = false
 	input.clear()
 	_update_touch_controls()
+	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray())
 	pause_panel.open(reason)
 
 

@@ -49,9 +49,21 @@ func _draw() -> void:
 				draw_rect(Rect2(14.0, 35.0 + i * 52.0, 37.0, 33.0), stripe, false, 3.0)
 		2:
 			draw_rect(Rect2(arena_size * 0.5 - Vector2(46, 154), Vector2(92, 308)), stripe)
+		3:
+			# Forge: two glowing channels across the floor.
+			var glow := Color(1.0, 0.45, 0.12, 0.30)
+			for share in [0.30, 0.70]:
+				var channel_y := arena_size.y * float(share)
+				draw_line(Vector2(18.0, channel_y), Vector2(arena_size.x - 18.0, channel_y), glow, 9.0)
+				draw_line(Vector2(18.0, channel_y), Vector2(arena_size.x - 18.0, channel_y),
+						Color(1.0, 0.75, 0.35, 0.35), 2.0)
+		4:
+			# Pit: rings around the centre.
+			for ring in 3:
+				draw_arc(arena_size * 0.5, 60.0 + ring * 55.0, 0.0, TAU, 64, stripe, 3.0)
 	for footprint in cover:
 		_draw_cover(footprint)
-	if room_style == 0 or room_style == 1:
+	if room_style == 0 or room_style == 1 or room_style == 3 or room_style == 4:
 		_draw_torch(Vector2(31.0, 29.0))
 		_draw_torch(Vector2(arena_size.x - 31.0, 29.0))
 	if not has_doors:
@@ -73,6 +85,13 @@ func _draw() -> void:
 
 func _draw_cover(footprint: Rect2) -> void:
 	var masonry := room_style == 0
+	if room_style == 3:
+		# Anvil block: dark iron with a hot edge.
+		draw_rect(footprint, Color(0.16, 0.16, 0.18))
+		draw_rect(footprint, Color(0.05, 0.05, 0.06), false, 4.0)
+		draw_rect(footprint.grow(-7.0), Color(0.26, 0.26, 0.29))
+		draw_rect(footprint.grow(3.0), Color(1.0, 0.5, 0.15, 0.55), false, 1.5)
+		return
 	var top_color := Color(0.38, 0.36, 0.32) if masonry else Color(0.32, 0.23, 0.17)
 	draw_rect(footprint, top_color)
 	draw_rect(footprint, Color(0.10, 0.09, 0.08), false, 4.0)

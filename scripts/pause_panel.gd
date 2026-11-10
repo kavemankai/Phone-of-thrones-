@@ -12,6 +12,7 @@ signal controls_requested
 var _title: Label
 var _reason: Label
 var _legend: Label
+var _pickups: Label
 var _resume: Button
 var _fullscreen: Button
 var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
@@ -53,6 +54,14 @@ func _ready() -> void:
 	_legend = _label(18)
 	_legend.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(_legend)
+
+	# Run pickups, in a column to the right of the buttons.
+	_pickups = Label.new()
+	_pickups.add_theme_font_size_override("font_size", 17)
+	_pickups.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pickups.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pickups.visible = false
+	add_child(_pickups)
 	_refresh()
 
 
@@ -84,6 +93,21 @@ func set_prompt_style(style: InputPrompts.Style, hold_for_heavy: bool) -> void:
 func layout(vp: Vector2) -> void:
 	position = Vector2.ZERO
 	size = vp
+	if _pickups != null:
+		_pickups.position = Vector2(vp.x * 0.5 + 220.0, 150.0)
+		_pickups.size = Vector2(maxf(120.0, vp.x * 0.5 - 250.0), vp.y - 200.0)
+
+
+## What the player carries this run, each with what it does. Empty hides the column.
+func set_pickups(ids: PackedStringArray) -> void:
+	if _pickups == null:
+		return
+	var lines: PackedStringArray = ["PICKUPS"]
+	for id in ids:
+		if Boon.exists(id):
+			lines.append("%s\n   %s" % [Boon.title(id), Boon.text(id)])
+	_pickups.text = "\n\n".join(lines)
+	_pickups.visible = lines.size() > 1
 
 
 func _process(_delta: float) -> void:

@@ -45,7 +45,7 @@ func _draw() -> void:
 func _draw_campaign() -> void:
 	var font := ThemeDB.fallback_font
 	var room := game.campaign.room()
-	var header := "%d / %d   %s" % [game.campaign.stage + 1, CampaignRun.ROOMS.size(), room.name]
+	var header := "%d / %d   %s" % [game.campaign.stage + 1, game.campaign.stage_count(), room.name]
 	var width := 620.0 if game.touch_ui else 780.0
 	var x := (size.x - width) * 0.5
 	var y := (150.0 if game.touch_ui else 36.0) + inset_top
@@ -53,6 +53,9 @@ func _draw_campaign() -> void:
 	if not game.checkpoint_message.is_empty():
 		draw_string(font, Vector2(x, y + 26.0), game.checkpoint_message,
 				HORIZONTAL_ALIGNMENT_CENTER, width, 18, Color.ORANGE)
+	if game.wave_notice > 0.0 and game.state == Game.State.FIGHTING:
+		draw_string(font, Vector2(x, size.y * 0.5), "REINFORCEMENTS",
+				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color(1.0, 0.8, 0.3))
 	if game.state == Game.State.ROOM_CLEAR:
 		draw_string(font, Vector2(x, size.y * 0.5), "ROOM CLEAR",
 				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color.WHITE)

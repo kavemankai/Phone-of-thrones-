@@ -275,10 +275,12 @@ func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_n
 	visible = true
 
 
-func show_campaign_result(cleared: bool, room: String) -> void:
+## End of a run or of an attempt: `heading` is the title, `details` the lines under it.
+func show_campaign_result(cleared: bool, heading: String, details: String) -> void:
 	show_start()
-	_title.text = "SLICE COMPLETE" if cleared else "DEFEAT"
-	_info.text = "Gatehouse, Kennels and Hall cleared." if cleared else "Checkpoint: %s" % room
+	_title.text = heading
+	_title.modulate = Color(0.5, 1.0, 0.55) if cleared else Color(1.0, 0.4, 0.35)
+	_info.text = details
 	_fight_button.text = "Test Room" if cleared else "Retry room"
 
 
