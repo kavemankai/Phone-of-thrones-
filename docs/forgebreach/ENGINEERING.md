@@ -26,7 +26,7 @@
 5. Save at stable stage boundaries and recover on boot. **Stop and hand commit to QA.**
 
 ## Milestone 3 — finite 10-stage campaign
-- Four arena templates, two visual themes, 2 added regular enemy identities maximum, stage-5 champion, stage-10 final boss with two readable phases.
+- Five named arena layouts with lighting variants, five added regular enemy identities total, stage-5 champion, stage-10 final boss with two readable phases. Pike Sentinel and War Hound enter in M2; add the Iron Warden, Chain Penitent and War Herald after M2 QA.
 - Every door variant resolves to a real encounter and terminates. All branch paths reach the final encounter. No unbounded procedural population.
 - Intro/onboarding, settings, pause, death, restart, completion, credits, run statistics and replay.
 - Use data-driven, validated content IDs instead of hardcoding every branch in Game.

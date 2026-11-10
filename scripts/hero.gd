@@ -26,6 +26,7 @@ var weapon: Weapon
 var has_shield := false
 var input: CombatInput
 var arena_size := Vector2(340, 380)
+var arena_cover: Array[Rect2] = []
 
 var state: State = State.IDLE
 var state_time := 0.0
@@ -444,6 +445,8 @@ func _aim_assist() -> void:
 		var dist := d.length()
 		if dist > cur_attack.reach + e.radius:
 			continue
+		if ArenaSpace.blocked(position, e.position, arena_cover):
+			continue
 		if dist > 0.001 and absf(facing.angle_to(d)) > half:
 			continue
 		if dist < best_dist:
@@ -459,6 +462,8 @@ func _apply_hits() -> void:
 			continue
 		var id: int = e.get_instance_id()
 		if hit_ids.has(id):
+			continue
+		if ArenaSpace.blocked(position, e.position, arena_cover):
 			continue
 		if HitShapes.circle_in_sector(position, facing, cur_attack.reach, cur_attack.arc,
 				e.position, e.radius):
@@ -488,8 +493,7 @@ func _try_dodge() -> bool:
 func _step_dodge(dt: float) -> void:
 	var prev := state_time - dt
 	var moving := clampf(tuning.dodge_duration - prev, 0.0, dt)
-	position += dodge_dir * (tuning.dodge_distance / tuning.dodge_duration) * moving
-	position = _clamp_to_arena(position)
+	position = _clamp_to_arena(position + dodge_dir * (tuning.dodge_distance / tuning.dodge_duration) * moving)
 	if state_time >= tuning.dodge_duration:
 		_enter(State.IDLE)
 
@@ -532,7 +536,7 @@ func _move(dt: float, mult: float, turn := true) -> void:
 
 
 func _clamp_to_arena(p: Vector2) -> Vector2:
-	return p.clamp(Vector2(radius, radius), arena_size - Vector2(radius, radius))
+	return ArenaSpace.move(position, p, radius, arena_size, arena_cover)
 
 
 func _process(delta: float) -> void:

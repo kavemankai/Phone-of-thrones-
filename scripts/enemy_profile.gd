@@ -10,6 +10,8 @@ extends Resource
 @export var radius := 16.0
 ## Distance kept while waiting for an attack slot.
 @export var hover_range := 90.0
+## Time spent circling in range before the first attack and each new commitment.
+@export var orbit_before_attack := 0.0
 @export var color := Color(0.88, 0.2, 0.2)
 ## Drawing only: a gold cap marks the captain. Alpha 0 means no cap.
 @export var cap_color := Color(0, 0, 0, 0)

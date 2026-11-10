@@ -3,17 +3,24 @@ extends RefCounted
 
 const CHECKPOINT := "user://campaign_checkpoint.cfg"
 const VERSION := 1
+const FOE_NAMES := {
+	"guard": "Gate Guard", "pike": "Pike Sentinel",
+	"hound": "War Hound", "sweeper": "Hall Sweeper",
+}
 const ROOMS := [
 	[
-		{"name": "Gatehouse", "size": Vector2(340, 380), "ground": Color(0.22, 0.24, 0.28), "light": Color(0.48, 0.60, 0.75), "foes": ["guard"]},
+		{"name": "Shattered Gatehouse", "size": Vector2(340, 380), "ground": Color(0.19, 0.18, 0.17), "light": Color(0.62, 0.57, 0.46),
+			"cover": [Rect2(126, 154, 88, 64)], "foes": ["guard", "pike"]},
 	],
 	[
-		{"name": "Kennels", "size": Vector2(365, 325), "ground": Color(0.25, 0.18, 0.12), "light": Color(0.73, 0.45, 0.24), "foes": ["hound"], "door": "Quiet pens", "heal": 10},
-		{"name": "Kennels", "size": Vector2(365, 325), "ground": Color(0.22, 0.15, 0.12), "light": Color(0.90, 0.40, 0.20), "foes": ["hound", "hound"], "door": "Feeding yard", "heal": 25},
+		{"name": "Blood Kennels", "size": Vector2(365, 325), "ground": Color(0.23, 0.16, 0.13), "light": Color(0.71, 0.43, 0.24),
+			"cover": [Rect2(58, 125, 32, 54), Rect2(271, 163, 34, 56)], "foes": ["hound"], "door": "Quiet pens", "heal": 10},
+		{"name": "Blood Kennels", "size": Vector2(365, 325), "ground": Color(0.21, 0.13, 0.11), "light": Color(0.82, 0.37, 0.22),
+			"cover": [Rect2(58, 125, 32, 54), Rect2(271, 163, 34, 56)], "foes": ["hound", "hound"], "door": "Feeding yard", "heal": 25},
 	],
 	[
-		{"name": "Hall", "size": Vector2(330, 450), "ground": Color(0.23, 0.18, 0.25), "light": Color(0.70, 0.46, 0.72), "foes": ["sweeper", "guard"], "door": "Side aisle", "heal": 10},
-		{"name": "Hall", "size": Vector2(330, 450), "ground": Color(0.20, 0.17, 0.26), "light": Color(0.62, 0.48, 0.88), "foes": ["sweeper", "guard", "hound"], "door": "Grand stairs", "heal": 25},
+		{"name": "Hall of Banners", "size": Vector2(330, 450), "ground": Color(0.22, 0.18, 0.18), "light": Color(0.66, 0.51, 0.46), "foes": ["sweeper", "guard"], "door": "Side aisle", "heal": 10},
+		{"name": "Hall of Banners", "size": Vector2(330, 450), "ground": Color(0.19, 0.16, 0.18), "light": Color(0.62, 0.44, 0.46), "foes": ["sweeper", "pike", "hound"], "door": "Grand stairs", "heal": 25},
 	],
 ]
 
@@ -104,24 +111,34 @@ static func read() -> CampaignRun:
 
 static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyProfile:
 	var profile := EnemyProfile.grunt_from(t)
-	profile.display_name = "Gate Guard"
+	profile.display_name = FOE_NAMES[kind]
 	profile.max_hp += 3.0 * stage_index
 	match kind:
+		"pike":
+			profile.id = "pike"
+			profile.color = Color(0.56, 0.52, 0.43)
+			profile.speed = 102.0
+			profile.hover_range = 108.0
+			var thrust := AttackDef.make("Pike thrust", 14.0, 118.0, 23.0, 0.82, 0.09, 1.10)
+			thrust.lock_time = 0.34
+			thrust.min_range = 52.0
+			thrust.max_range = 111.0
+			profile.attacks = [thrust]
 		"hound":
 			profile.id = "hound"
-			profile.display_name = "Hound"
-			profile.color = Color(0.88, 0.46, 0.24)
-			profile.speed = 151.0
+			profile.color = Color(0.53, 0.36, 0.26)
+			profile.speed = 162.0
 			profile.radius = 12.0
-			profile.hover_range = 64.0
-			profile.max_hp = 23.0 + 2.0 * stage_index
-			var bite := AttackDef.make("Pounce", 9.0, 61.0, 43.0, 0.50, 0.11, 0.72, 0.0, 18.0)
-			bite.max_range = 59.0
+			profile.hover_range = 69.0
+			profile.orbit_before_attack = 0.50
+			profile.max_hp = 19.0 + 2.0 * stage_index
+			var bite := AttackDef.make("Pounce", 9.0, 80.0, 42.0, 0.46, 0.16, 0.70, 0.0, 46.0)
+			bite.lock_time = 0.23
+			bite.max_range = 71.0
 			profile.attacks = [bite]
 		"sweeper":
 			profile.id = "sweeper"
-			profile.display_name = "Hall Sweeper"
-			profile.color = Color(0.68, 0.36, 0.73)
+			profile.color = Color(0.64, 0.37, 0.32)
 			profile.speed = 83.0
 			profile.max_hp = 46.0
 			profile.radius = 19.0
@@ -131,10 +148,10 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 	return profile
 
 
-static func foe_summary(foes: Array) -> String:
+static func foe_summary(foes: Array) -> PackedStringArray:
 	var labels: PackedStringArray = []
-	for kind: String in ["guard", "hound", "sweeper"]:
+	for kind: String in FOE_NAMES:
 		var count := foes.count(kind)
 		if count > 0:
-			labels.append("%d %s%s" % [count, kind.capitalize(), "s" if count > 1 else ""])
-	return " + ".join(labels)
+			labels.append("%d %s%s" % [count, FOE_NAMES[kind], "s" if count > 1 else ""])
+	return labels

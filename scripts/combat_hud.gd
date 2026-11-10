@@ -64,7 +64,7 @@ func _draw_campaign() -> void:
 		interact, game.arena_view.near_door + 1,
 	]
 	var panel_y := size.y * 0.28 if game.touch_ui else size.y - bar_height + 12.0
-	draw_rect(Rect2(x, panel_y, width, 110.0), Color(0.05, 0.06, 0.07, 0.94))
+	draw_rect(Rect2(x, panel_y, width, 130.0), Color(0.05, 0.06, 0.07, 0.94))
 	draw_string(font, Vector2(x, panel_y + 25.0), instruction,
 			HORIZONTAL_ALIGNMENT_CENTER, width, 22, Color.WHITE)
 	for i in choices.size():
@@ -73,13 +73,19 @@ func _draw_campaign() -> void:
 		var color := Color(1.0, 0.83, 0.35) if game.arena_view.near_door == i else Color(0.80, 0.85, 0.92)
 		draw_string(font, Vector2(column_x, panel_y + 54.0), "%d   %s" % [i + 1, choice.door],
 				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 21, color)
-		var preview := "%s  ·  +%d HP" % [CampaignRun.foe_summary(choice.foes), choice.heal]
-		draw_string(font, Vector2(column_x, panel_y + 80.0), preview,
+		var foes := CampaignRun.foe_summary(choice.foes)
+		var first_line := " + ".join(foes.slice(0, 2))
+		draw_string(font, Vector2(column_x, panel_y + 78.0), first_line,
 				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 17, color)
+		if foes.size() > 2:
+			draw_string(font, Vector2(column_x, panel_y + 96.0), "+ " + " + ".join(foes.slice(2)),
+					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 17, color)
 		var bonus := game.campaign.guard_reward(i)
+		var reward := "+%d HP" % choice.heal
 		if bonus > 0:
-			draw_string(font, Vector2(column_x, panel_y + 100.0), "+%d max guard for this run" % bonus,
-					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 16, color)
+			reward += "  ·  +%d max guard for this run" % bonus
+		draw_string(font, Vector2(column_x, panel_y + 119.0), reward,
+				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 16, color)
 
 
 ## PC layout: one bar under the arena. Left: health, dodges, guard. Right: enemies and

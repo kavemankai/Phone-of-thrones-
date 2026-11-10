@@ -235,7 +235,9 @@ func _prepare_room(room_size: Vector2) -> void:
 	paused = false
 	tuning.arena_size = room_size
 	hero.arena_size = room_size
+	hero.arena_cover.clear()
 	arena_view.arena_size = room_size
+	arena_view.cover.clear()
 	arena_view.room_style = -1
 	arena_view.room_ground = ArenaView.GROUND
 	arena_view.room_light = ArenaView.BORDER
@@ -310,6 +312,8 @@ func _start_campaign_room() -> void:
 	arena_view.has_doors = not campaign.choices().is_empty()
 	arena_view.room_ground = room.ground
 	arena_view.room_light = room.light
+	hero.arena_cover.assign(room.get("cover", []))
+	arena_view.cover.assign(hero.arena_cover)
 	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
 	var spots := tuning.enemy_spawns()
 	for i in room.foes.size():
