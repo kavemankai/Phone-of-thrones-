@@ -12,6 +12,9 @@ signal damaged(knocked_back: bool)
 signal struck
 signal died
 
+## How long an enemy reels when it enters its second phase.
+const PHASE_REEL_TIME := 1.2
+
 var tuning: Tuning
 var profile: EnemyProfile
 var controller: EncounterController
@@ -47,6 +50,11 @@ var stagger_total := 0.0
 var stagger_wakes := true
 var stagger_bonus := 2.0
 var stagger_immune := 0.0
+## Movement speed multiplier from a nearby War Herald. Game sets it every step.
+var speed_buff := 1.0
+## 1, or 2 once a two-phase enemy has passed its threshold.
+var phase := 1
+var guard_flash := 0.0
 
 
 func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: int,
@@ -63,6 +71,8 @@ func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: i
 	pattern_pos = 0
 	cooldown = t.enemy_stagger * idx
 	strafe_sign = 1.0 if idx % 2 == 0 else -1.0
+	speed_buff = 1.0
+	phase = 1
 	state = State.APPROACH
 	fade = 0.0
 	visible = true
@@ -120,6 +130,11 @@ func take_hit(damage: float, from: Vector2, knockback: float, stagger_time := 0.
 	var was_staggered := state == State.STAGGER
 	if was_staggered:
 		damage *= stagger_bonus
+	if shield_faces(from):
+		damage *= profile.front_guard_mult
+		knockback = 0.0
+		stagger_time = 0.0
+		guard_flash = 0.15
 	hp -= damage
 	flash = 0.12
 	if knockback > 0.0:
@@ -128,6 +143,8 @@ func take_hit(damage: float, from: Vector2, knockback: float, stagger_time := 0.
 		position = clamp_to_arena(position + dir * knockback)
 	if hp <= 0.0:
 		_die()
+	elif _enter_second_phase():
+		damaged.emit(false)
 	else:
 		if was_staggered:
 			if stagger_wakes:
@@ -152,6 +169,36 @@ func _execute() -> void:
 	flash = 0.12
 	if hp <= 0.0:
 		_die()
+	else:
+		_enter_second_phase()
+
+
+## True when a hit from `from` lands on a raised front shield. The shield is down while
+## the enemy recovers from its own attack or is staggered: that is the opening.
+func shield_faces(from: Vector2) -> bool:
+	if profile.front_guard_arc <= 0.0 or state == State.RECOVER or state == State.STAGGER \
+			or state == State.DEAD:
+		return false
+	var toward := from - position
+	if toward.length() < 0.001:
+		return true
+	return absf(facing.angle_to(toward)) <= deg_to_rad(profile.front_guard_arc) * 0.5
+
+
+## Crossing the phase threshold: reel briefly (hits do not end it and get no bonus), then
+## fight with the second pattern. The profile is copied first, so the shared one is not edited.
+func _enter_second_phase() -> bool:
+	if phase != 1 or profile.phase2_at <= 0.0 or hp > profile.max_hp * profile.phase2_at:
+		return false
+	phase = 2
+	var second := profile.duplicate() as EnemyProfile
+	if not second.phase2_pattern.is_empty():
+		second.pattern = second.phase2_pattern
+	second.speed *= second.phase2_speed_mult
+	profile = second
+	pattern_pos = 0
+	stagger(PHASE_REEL_TIME, false, 1.0)
+	return true
 
 
 func clamp_to_arena(p: Vector2) -> Vector2:
@@ -220,7 +267,7 @@ func _step_free(dt: float) -> void:
 	facing = dir
 	var next_pos := profile.choose(dist, pattern_pos)
 	var next := profile.attack_at(next_pos)
-	var wants_in := cooldown <= 0.0 and controller.has_slot(self)
+	var wants_in := cooldown <= 0.0 and controller.has_slot(self) and not profile.passive
 	if ArenaSpace.blocked(position, hero.position, hero.arena_cover):
 		state = State.APPROACH
 		orbit_time = 0.0
@@ -261,7 +308,7 @@ func _step_free(dt: float) -> void:
 
 
 func _move(dir: Vector2, mult: float, dt: float) -> void:
-	position = clamp_to_arena(position + dir * profile.speed * mult * dt)
+	position = clamp_to_arena(position + dir * profile.speed * speed_buff * mult * dt)
 
 
 func _step_windup() -> void:
@@ -307,6 +354,7 @@ func _try_hit() -> void:
 
 func _process(delta: float) -> void:
 	flash = maxf(0.0, flash - delta)
+	guard_flash = maxf(0.0, guard_flash - delta)
 	z_index = int(position.x + position.y)  # isometric depth order
 	if state == State.DEAD:
 		fade = maxf(0.0, fade - delta)
@@ -331,6 +379,19 @@ func _draw() -> void:
 			0.0, TAU, 40, ring_color, 3.0 if is_captain() else 2.0)
 	if state == State.WINDUP or state == State.ACTIVE:
 		_draw_telegraph()
+	if profile.front_guard_arc > 0.0:
+		# The shield arc on the ground: bright while it is up, gone while it is down.
+		var shield_up := state != State.RECOVER and state != State.STAGGER
+		if shield_up:
+			var half_arc := deg_to_rad(profile.front_guard_arc) * 0.5
+			var mid := facing.angle()
+			var tint := Color(1, 1, 1) if guard_flash > 0.0 else Color(0.70, 0.80, 0.95, 0.9)
+			draw_arc(Vector2.ZERO, radius + 9.0, mid - half_arc, mid + half_arc, 18, tint, 5.0)
+	if profile.aura_range > 0.0:
+		# The Herald's reach: enemies inside this ring are faster.
+		draw_arc(Vector2.ZERO, profile.aura_range, 0.0, TAU, 64, Color(profile.color, 0.28), 2.0)
+	if speed_buff > 1.0:
+		draw_arc(Vector2.ZERO, radius + 2.0, 0.0, TAU, 24, Color(1.0, 0.85, 0.3, 0.85), 2.0)
 
 	# Upright pass.
 	draw_set_transform_matrix(Iso.upright())
