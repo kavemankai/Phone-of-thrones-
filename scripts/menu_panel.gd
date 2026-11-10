@@ -8,6 +8,8 @@ extends Control
 signal fight_requested(mode: int, weapon_index: int, shield: bool)
 signal quit_requested
 signal controls_requested
+signal campaign_requested(weapon_index: int, shield: bool)
+signal continue_requested
 
 const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 
@@ -21,6 +23,9 @@ var _title: Label
 var _info: Label
 var _weapon_desc: Label
 var _fight_button: Button
+var _campaign_button: Button
+var _continue_button: Button
+var _new_campaign_armed := false
 var _quit_button: Button
 ## Quit takes two presses; moving the focus away cancels the first.
 var _quit_armed := false
@@ -133,9 +138,23 @@ func _ready() -> void:
 		sb.set_corner_radius_all(10)
 		_fight_button.add_theme_stylebox_override(style_name, sb)
 	_fight_button.pressed.connect(func(): fight_requested.emit(mode, weapon_index, shield_usable()))
-	var wrap := CenterContainer.new()
-	wrap.add_child(_fight_button)
-	box.add_child(wrap)
+	var play_row := HBoxContainer.new()
+	play_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	play_row.add_theme_constant_override("separation", 12)
+	play_row.add_child(_fight_button)
+	box.add_child(play_row)
+	_campaign_button = _toggle("New campaign", null, Vector2(245, 76))
+	_campaign_button.toggle_mode = false
+	_campaign_button.add_theme_font_size_override("font_size", 26)
+	_campaign_button.pressed.connect(_on_campaign_pressed)
+	_campaign_button.focus_exited.connect(_disarm_campaign)
+	play_row.add_child(_campaign_button)
+	_continue_button = _toggle("Continue", null, Vector2(180, 76))
+	_continue_button.toggle_mode = false
+	_continue_button.add_theme_font_size_override("font_size", 24)
+	_continue_button.pressed.connect(func(): continue_requested.emit())
+	play_row.add_child(_continue_button)
+	_continue_button.hide()
 
 	_quit_button = Button.new()
 	_quit_button.custom_minimum_size = Vector2(340, 42)
@@ -239,8 +258,9 @@ func set_mode(m: int) -> void:
 func show_start() -> void:
 	_title.text = "FORGEBREACH"
 	_title.modulate = Color.WHITE
-	_info.text = "Pick a weapon, then fight."
-	_fight_button.text = "Fight"
+	_info.text = "Pick a weapon, then start a campaign or enter the Test Room."
+	_fight_button.text = "Test Room"
+	_disarm_campaign()
 	_disarm_quit()
 	visible = true
 
@@ -253,6 +273,30 @@ func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_n
 	set_mode(m)
 	_disarm_quit()
 	visible = true
+
+
+func show_campaign_result(cleared: bool, room: String) -> void:
+	show_start()
+	_title.text = "SLICE COMPLETE" if cleared else "DEFEAT"
+	_info.text = "Gatehouse, Kennels and Hall cleared." if cleared else "Checkpoint: %s" % room
+	_fight_button.text = "Test Room" if cleared else "Retry room"
+
+
+func set_continue_available(available: bool) -> void:
+	_continue_button.visible = available
+
+
+func _on_campaign_pressed() -> void:
+	if _continue_button.visible and not _new_campaign_armed:
+		_new_campaign_armed = true
+		_campaign_button.text = "Replace save?"
+		return
+	campaign_requested.emit(weapon_index, shield_usable())
+
+
+func _disarm_campaign() -> void:
+	_new_campaign_armed = false
+	_campaign_button.text = "New campaign"
 
 
 func layout(vp: Vector2) -> void:

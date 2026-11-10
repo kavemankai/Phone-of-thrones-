@@ -38,6 +38,48 @@ func _draw() -> void:
 		_draw_touch_layout()
 	else:
 		_draw_bar_layout()
+	if game.campaign != null:
+		_draw_campaign()
+
+
+func _draw_campaign() -> void:
+	var font := ThemeDB.fallback_font
+	var room := game.campaign.room()
+	var header := "%d / %d   %s" % [game.campaign.stage + 1, CampaignRun.ROOMS.size(), room.name]
+	var width := 620.0
+	var x := (size.x - width) * 0.5
+	var y := (150.0 if game.touch_ui else 36.0) + inset_top
+	draw_string(font, Vector2(x, y), header, HORIZONTAL_ALIGNMENT_CENTER, width, 24, room.light.lightened(0.45))
+	if not game.checkpoint_message.is_empty():
+		draw_string(font, Vector2(x, y + 26.0), game.checkpoint_message,
+				HORIZONTAL_ALIGNMENT_CENTER, width, 18, Color.ORANGE)
+	if game.state == Game.State.ROOM_CLEAR:
+		draw_string(font, Vector2(x, size.y * 0.5), "ROOM CLEAR",
+				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color.WHITE)
+	if game.state != Game.State.DOOR_CHOICE:
+		return
+	var choices := game.campaign.choices()
+	var interact := "Tap the door" if game.touch_ui else "Press %s" % InputPrompts.confirm(game.prompt_style)
+	var instruction := "Approach either door" if game.arena_view.near_door < 0 else "%s to enter Door %d" % [
+		interact, game.arena_view.near_door + 1,
+	]
+	var panel_y := size.y * 0.28 if game.touch_ui else size.y - bar_height + 12.0
+	draw_rect(Rect2(x, panel_y, width, 110.0), Color(0.05, 0.06, 0.07, 0.94))
+	draw_string(font, Vector2(x, panel_y + 25.0), instruction,
+			HORIZONTAL_ALIGNMENT_CENTER, width, 22, Color.WHITE)
+	for i in choices.size():
+		var choice: Dictionary = choices[i]
+		var column_x := x + i * width * 0.5
+		var color := Color(1.0, 0.83, 0.35) if game.arena_view.near_door == i else Color(0.80, 0.85, 0.92)
+		draw_string(font, Vector2(column_x, panel_y + 54.0), "%d   %s" % [i + 1, choice.door],
+				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 21, color)
+		var preview := "%s  ·  +%d HP" % [CampaignRun.foe_summary(choice.foes), choice.heal]
+		draw_string(font, Vector2(column_x, panel_y + 80.0), preview,
+				HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 17, color)
+		var bonus := game.campaign.guard_reward(i)
+		if bonus > 0:
+			draw_string(font, Vector2(column_x, panel_y + 100.0), "+%d max guard for this run" % bonus,
+					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 16, color)
 
 
 ## PC layout: one bar under the arena. Left: health, dodges, guard. Right: enemies and

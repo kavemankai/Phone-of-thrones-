@@ -43,6 +43,7 @@ var hit_ids: Dictionary = {}
 var flash := 0.0
 var radius := 16.0
 var guard := 0.0
+var run_guard_bonus := 0.0
 var guard_wait := 0.0
 var block_cd := 0.0
 var parry_flash := 0.0
@@ -98,7 +99,7 @@ func guard_arc() -> float:
 
 
 func guard_max() -> float:
-	return tuning.guard_max_shield if has_shield else tuning.guard_max_bare
+	return (tuning.guard_max_shield if has_shield else tuning.guard_max_bare) + run_guard_bonus
 
 
 func guard_cost_mult() -> float:
@@ -279,6 +280,16 @@ func step(dt: float, enemies: Array) -> void:
 
 func is_guarding() -> bool:
 	return state == State.BLOCK
+
+
+func begin_room_clear() -> void:
+	_enter(State.IDLE)
+	velocity = Vector2.ZERO
+	charge_time = 0.0
+
+
+func walk_clear_room(dt: float) -> void:
+	_move(dt, 1.0)
 
 
 func _raise_guard() -> void:

@@ -5,7 +5,7 @@ extends Node
 ## Device input arrives as InputMap actions (see InputActions) and is translated into
 ## CombatInput here; nothing below this node knows about keys or pads.
 
-enum State { MENU, FIGHTING, RESULT }
+enum State { MENU, FIGHTING, RESULT, ROOM_CLEAR, DOOR_CHOICE }
 enum Outcome { NONE, VICTORY, DEFEAT }
 ## ONE: a single enemy for practice. THREE_CAPTAIN: three enemies, then the captain.
 ## CAPTAIN_ONLY: skip straight to the captain.
@@ -26,6 +26,7 @@ const WEAPON_PATHS := [
 	"res://resources/weapons/zweihander.tres",
 ]
 const CAPTAIN_PATH := "res://resources/captain.tres"
+const DOOR_REACH := 49.0
 
 signal state_changed(new_state: State)
 
@@ -52,6 +53,10 @@ var intermission_left := 0.0
 var fight_time := 0.0
 var result_timer := 0.0
 var enemies: Array = []
+var campaign: CampaignRun
+var checkpoint_message := ""
+var _clear_delay := 0.0
+var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
 ## Phone build only: show and read the on-screen buttons. Never on desktop.
@@ -140,15 +145,20 @@ func _ready() -> void:
 	ui.add_child(menu)
 	menu.set_weapons(weapons)
 	menu.fight_requested.connect(func(m: int, w: int, sh: bool):
+		if campaign != null and state == State.RESULT and outcome == Outcome.DEFEAT:
+			_start_campaign_room()
+			return
 		shield_on = sh
 		split_attacks = menu.split_attacks
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
+	menu.campaign_requested.connect(_new_campaign)
+	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
 	ui.add_child(pause_panel)
 	pause_panel.resume_requested.connect(resume_game)
-	pause_panel.restart_requested.connect(func(): start_fight(mode))
+	pause_panel.restart_requested.connect(_restart_room)
 	pause_panel.loadout_requested.connect(return_to_menu)
 	pause_panel.quit_requested.connect(func(): get_tree().quit())
 	bindings_panel = BindingsPanel.new()
@@ -198,18 +208,40 @@ func enemies_alive() -> int:
 ## Clears every piece of fight state and starts a new encounter. A negative weapon_idx
 ## keeps the current weapon.
 func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
+	campaign = null
+	checkpoint_message = ""
 	mode = new_mode
 	if weapon_idx >= 0:
 		weapon_index = clampi(weapon_idx, 0, weapons.size() - 1)
+	_prepare_room(_test_room_size if arena_view.room_style >= 0 else tuning.arena_size)
+	match mode:
+		Mode.ONE:
+			_spawn_grunts(1)
+		Mode.THREE_CAPTAIN:
+			_spawn_grunts(3)
+		Mode.CAPTAIN_ONLY:
+			_spawn_captain()
+	_begin_room()
+
+
+func _prepare_room(room_size: Vector2) -> void:
 	for e in enemies:
 		iso_layer.remove_child(e)
 		e.queue_free()
 	enemies.clear()
 	controller.reset()
 	controls.reset()
-	input.clear()
+	_release_all_input()
 	paused = false
-	_guard_held_over_pause = false
+	tuning.arena_size = room_size
+	hero.arena_size = room_size
+	arena_view.arena_size = room_size
+	arena_view.room_style = -1
+	arena_view.room_ground = ArenaView.GROUND
+	arena_view.room_light = ArenaView.BORDER
+	arena_view.doors_open = false
+	arena_view.has_doors = false
+	arena_view.near_door = -1
 	# The trial changes only this Game's private tuning copy.
 	tuning.block_arc_shield = 140.0 if directional_guard else original_defense["shield_arc"]
 	tuning.block_arc_bare = 110.0 if directional_guard else original_defense["bare_arc"]
@@ -218,17 +250,16 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	hero.block_stun_mult = 0.55 if directional_guard else 1.0
 	controls.separate_attacks = split_attacks
 	hero.equip(weapon(), shield_on)
+	hero.run_guard_bonus = float(campaign.guard_bonus) if campaign != null else 0.0
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
 	intermission_left = 0.0
-	match mode:
-		Mode.ONE:
-			_spawn_grunts(1)
-		Mode.THREE_CAPTAIN:
-			_spawn_grunts(3)
-		Mode.CAPTAIN_ONLY:
-			_spawn_captain()
+
+
+func _begin_room() -> void:
+	arena_view.queue_redraw()
+	_apply_layout()
 	outcome = Outcome.NONE
 	fight_time = 0.0
 	result_timer = 0.0
@@ -239,6 +270,58 @@ func start_fight(new_mode: Mode, weapon_idx := -1) -> void:
 	menu.set_directional_guard(directional_guard)
 	_apply_prompt_style()
 	_set_state(State.FIGHTING)
+
+
+func _new_campaign(w: int, shield: bool) -> void:
+	campaign = CampaignRun.new()
+	campaign.weapon_index = w
+	campaign.shield = shield
+	campaign.split = menu.split_attacks
+	campaign.directional = menu.directional_guard
+	campaign.hp = tuning.hero_max_hp
+	_save_campaign()
+	_start_campaign_room()
+
+
+func _continue_campaign() -> void:
+	var saved := CampaignRun.read()
+	if saved == null:
+		menu.set_continue_available(false)
+		return
+	campaign = saved
+	checkpoint_message = ""
+	_start_campaign_room()
+
+
+func _save_campaign() -> void:
+	checkpoint_message = "" if campaign.save() == OK else "Checkpoint could not be saved."
+
+
+func _start_campaign_room() -> void:
+	var room := campaign.room()
+	weapon_index = clampi(campaign.weapon_index, 0, weapons.size() - 1)
+	shield_on = campaign.shield
+	split_attacks = campaign.split
+	directional_guard = campaign.directional
+	if arena_view.room_style < 0:
+		_test_room_size = tuning.arena_size
+	_prepare_room(room["size"])
+	arena_view.room_style = campaign.stage
+	arena_view.has_doors = not campaign.choices().is_empty()
+	arena_view.room_ground = room.ground
+	arena_view.room_light = room.light
+	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
+	var spots := tuning.enemy_spawns()
+	for i in room.foes.size():
+		_add_enemy(spots[i], i, CampaignRun.enemy_profile(room.foes[i], tuning, campaign.stage))
+	_begin_room()
+
+
+func _restart_room() -> void:
+	if campaign == null:
+		start_fight(mode)
+	else:
+		_start_campaign_room()
 
 
 func _spawn_grunts(count: int) -> void:
@@ -314,6 +397,19 @@ func _check_outcome() -> void:
 		return
 	if enemies_alive() > 0 or intermission_active:
 		return
+	if campaign != null:
+		if campaign.choices().is_empty():
+			if CampaignRun.read() != null:
+				var error := DirAccess.remove_absolute(CampaignRun.CHECKPOINT)
+				checkpoint_message = "" if error == OK else "Could not close the checkpoint."
+			_finish(Outcome.VICTORY)
+		else:
+			_clear_delay = 0.55
+			_release_all_input()
+			hero.begin_room_clear()
+			sfx.play("win")
+			_set_state(State.ROOM_CLEAR)
+		return
 	if mode == Mode.THREE_CAPTAIN and not captain_spawned and captain_profile != null:
 		_begin_intermission()
 		return
@@ -338,9 +434,8 @@ func _set_state(s: State) -> void:
 	match s:
 		State.MENU:
 			menu.show_start()
-		State.FIGHTING:
-			menu.visible = false
-		State.RESULT:
+			menu.set_continue_available(CampaignRun.read() != null)
+		_:
 			menu.visible = false
 	state_changed.emit(s)
 
@@ -352,11 +447,51 @@ func _process(delta: float) -> void:
 				return
 			_poll_devices()
 			step(delta)
+		State.ROOM_CLEAR:
+			if paused:
+				return
+			_clear_delay -= delta
+			if _clear_delay <= 0.0:
+				arena_view.doors_open = true
+				arena_view.queue_redraw()
+				_set_state(State.DOOR_CHOICE)
+		State.DOOR_CHOICE:
+			if paused:
+				return
+			_poll_devices()
+			hero.walk_clear_room(minf(delta, MAX_FRAME_DT))
+			_update_near_door()
 		State.RESULT:
 			if result_timer > 0.0:
 				result_timer -= delta
 				if result_timer <= 0.0:
-					menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
+					if campaign == null:
+						menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
+					else:
+						menu.show_campaign_result(outcome == Outcome.VICTORY, campaign.room().name)
+					menu.set_continue_available(CampaignRun.read() != null)
+
+
+func _update_near_door() -> void:
+	var nearest := -1
+	var distance := DOOR_REACH
+	for i in 2:
+		var candidate := hero.position.distance_to(arena_view.door_position(i))
+		if candidate < distance:
+			nearest = i
+			distance = candidate
+	if nearest != arena_view.near_door:
+		arena_view.near_door = nearest
+		arena_view.queue_redraw()
+
+
+func _enter_near_door() -> void:
+	_update_near_door()
+	if arena_view.near_door < 0:
+		return
+	campaign.advance(arena_view.near_door, hero.hp, tuning.hero_max_hp)
+	_save_campaign()
+	_start_campaign_room()
 
 
 ## Held, analogue input: left stick / movement keys and the right stick. Read once per frame;
@@ -387,7 +522,7 @@ func _input(event: InputEvent) -> void:
 	if not menu_input and event.is_action_pressed(InputActions.FULLSCREEN):
 		pause_panel.toggle_fullscreen()
 		return
-	if state != State.FIGHTING:
+	if state not in [State.FIGHTING, State.ROOM_CLEAR, State.DOOR_CHOICE]:
 		return
 	if paused:
 		# Pause again or Back closes the pause. Everything else belongs to the panel.
@@ -400,7 +535,18 @@ func _input(event: InputEvent) -> void:
 		pause_game()
 		get_viewport().set_input_as_handled()
 		return
-	_combat_event(event)
+	if state == State.DOOR_CHOICE and event.is_action_pressed(&"ui_accept"):
+		_enter_near_door()
+		get_viewport().set_input_as_handled()
+	elif state == State.DOOR_CHOICE and event is InputEventScreenTouch and event.pressed:
+		_update_near_door()
+		if arena_view.near_door >= 0:
+			var door := arena_view.to_global(arena_view.door_position(arena_view.near_door))
+			if event.position.distance_to(door) < 70.0:
+				_enter_near_door()
+				get_viewport().set_input_as_handled()
+	elif state == State.FIGHTING:
+		_combat_event(event)
 
 
 func _open_bindings(panel: Control) -> void:
@@ -459,7 +605,7 @@ func _drop_guard_carryover() -> void:
 ## Stops the simulation and shows the pause panel. Held input is dropped, so nothing can
 ## stay stuck behind the panel.
 func pause_game(reason := "") -> void:
-	if state != State.FIGHTING or paused:
+	if state not in [State.FIGHTING, State.ROOM_CLEAR, State.DOOR_CHOICE] or paused:
 		return
 	paused = true
 	_guard_held_over_pause = false
@@ -483,6 +629,7 @@ func resume_game() -> void:
 
 ## Leaves the fight for the loadout screen (from the pause panel).
 func return_to_menu() -> void:
+	campaign = null
 	for e in enemies:
 		iso_layer.remove_child(e)
 		e.queue_free()
@@ -497,7 +644,7 @@ func return_to_menu() -> void:
 
 func _update_touch_controls() -> void:
 	controls.visible = touch_ui
-	controls.set_enabled(touch_ui and state == State.FIGHTING and not paused)
+	controls.set_enabled(touch_ui and state in [State.FIGHTING, State.DOOR_CHOICE] and not paused)
 
 
 ## Drop everything a device was holding: used when it can no longer send the release.
@@ -517,7 +664,7 @@ func _on_joy_connection_changed(_device: int, connected: bool) -> void:
 	_release_all_input()
 	if Input.get_connected_joypads().is_empty():
 		_set_prompt_style(InputPrompts.Style.KEYBOARD)
-	if state == State.FIGHTING:
+	if state in [State.FIGHTING, State.ROOM_CLEAR, State.DOOR_CHOICE]:
 		if paused:
 			pause_panel.set_reason("Controller disconnected.")
 		else:
@@ -564,7 +711,7 @@ func _notification(what: int) -> void:
 		if controls == null or pause_panel == null:
 			return
 		_release_all_input()
-		if state == State.FIGHTING:
+		if state in [State.FIGHTING, State.ROOM_CLEAR, State.DOOR_CHOICE]:
 			pause_game("Paused: the game window lost focus.")
 
 
@@ -620,6 +767,8 @@ func _apply_layout() -> void:
 	# on PC. The arena never reaches into it.
 	var band_h := vp.y * tuning.control_band_fraction
 	var top := insets.y + (HUD_HEIGHT if touch_ui else ARENA_TOP_MARGIN)
+	if campaign != null:
+		top += 35.0
 	var free := Rect2(
 		insets.x + 10.0,
 		top,
