@@ -30,6 +30,8 @@ var arena_size := Vector2(340, 380)
 var state: State = State.IDLE
 var state_time := 0.0
 var hp := 100.0
+var stamina := 0.0
+var stamina_wait := 0.0
 var facing := Vector2.UP
 var charge_time := 0.0
 var immune_time := 0.0
@@ -134,6 +136,8 @@ func reset(pos: Vector2) -> void:
 	state = State.IDLE
 	state_time = 0.0
 	hp = tuning.hero_max_hp
+	stamina = tuning.stamina_max
+	stamina_wait = 0.0
 	facing = Vector2.UP
 	charge_time = 0.0
 	immune_time = 0.0
@@ -213,6 +217,7 @@ func step(dt: float, enemies: Array) -> void:
 	_recharge_dodge(dt)
 	block_cd = maxf(0.0, block_cd - dt)
 	_regen_guard(dt)
+	_regen_stamina(dt)
 	state_time += dt
 	match state:
 		State.IDLE:
@@ -309,6 +314,8 @@ func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult
 
 
 func _absorb(damage: float, atk: AttackDef) -> void:
+	var stamina_rate := tuning.stamina_block_shield if has_shield else tuning.stamina_block_bare
+	_spend_stamina(damage * stamina_rate * atk.guard_cost_mult)
 	var chip := damage * (1.0 - guard_reduction())
 	if chip > 0.0:
 		hp = maxf(0.0, hp - chip)
@@ -321,12 +328,33 @@ func _absorb(damage: float, atk: AttackDef) -> void:
 	guard_wait = tuning.guard_regen_delay
 	block_flash = 0.15
 	_show_cue("BLOCK", Color(0.6, 0.85, 1.0))
-	if guard <= 0.0:
+	if guard <= 0.0 or stamina <= 0.0:
+		guard = 0.0
 		_enter(State.GUARD_BREAK)
 		_show_cue("BROKEN", Color(1.0, 0.45, 0.2))
 		guard_broken.emit()
 	else:
 		blocked.emit(false)
+
+
+func _spend_stamina(cost: float) -> void:
+	if cost > 0.0:
+		stamina = maxf(0.0, stamina - cost)
+		stamina_wait = tuning.stamina_regen_delay
+
+
+func _try_spend_stamina(cost: float) -> bool:
+	if stamina + EPS < cost:
+		_show_cue("LOW STAMINA", Color(1.0, 0.68, 0.30))
+		return false
+	_spend_stamina(cost)
+	return true
+
+
+func _regen_stamina(dt: float) -> void:
+	stamina_wait = maxf(0.0, stamina_wait - dt)
+	if stamina_wait <= 0.0 and state in [State.IDLE, State.RECOVER, State.HURT]:
+		stamina = minf(tuning.stamina_max, stamina + tuning.stamina_regen * dt)
 
 
 func _regen_guard(dt: float) -> void:
@@ -383,8 +411,12 @@ func _step_charging(dt: float) -> void:
 
 
 func _start_attack(heavy: bool) -> void:
-	cur_attack = weapon.attack_data(heavy)
 	charge_time = 0.0
+	var cost := tuning.stamina_heavy_cost if heavy else tuning.stamina_light_cost
+	if not _try_spend_stamina(cost):
+		_enter(State.IDLE)
+		return
+	cur_attack = weapon.attack_data(heavy)
 	_aim_assist()
 	hit_ids = {}
 	_enter(State.WINDUP)
@@ -426,6 +458,8 @@ func _apply_hits() -> void:
 
 func _try_dodge() -> bool:
 	if dodge_charges <= 0:
+		return false
+	if not _try_spend_stamina(tuning.stamina_roll_cost):
 		return false
 	var v := input.move_vector()
 	dodge_dir = v.normalized() if v.length() > 0.2 else -facing
@@ -553,6 +587,9 @@ func _draw() -> void:
 	draw_set_transform_matrix(Iso.upright())
 	var height := r * 2.0
 	var side := FLASH_COLOR if flash > 0.0 else BODY_COLOR
+	if state == State.DODGE:
+		_draw_roll(r, side)
+		return
 	if state == State.DEAD:
 		side = Color(0.3, 0.35, 0.45)
 	var shield_pos := _shield_offset(height)
@@ -577,11 +614,23 @@ func _draw() -> void:
 	draw_circle(tip, 3.0, Color(1, 1, 1))
 	_draw_weapon(height * 0.55, attacking)
 	if cue_left > 0.0:
-		var cue_pos := Vector2(-80.0, -height - 28.0)
+		var cue_pos := Vector2(-110.0, -height - 28.0)
 		draw_string(ThemeDB.fallback_font, cue_pos + Vector2(1.0, 2.0), cue_text,
-				HORIZONTAL_ALIGNMENT_CENTER, 160.0, 26, Color(0.0, 0.0, 0.0, 0.95))
+				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, Color(0.0, 0.0, 0.0, 0.95))
 		draw_string(ThemeDB.fallback_font, cue_pos, cue_text,
-				HORIZONTAL_ALIGNMENT_CENTER, 160.0, 26, cue_color)
+				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, cue_color)
+
+
+func _draw_roll(r: float, tint: Color) -> void:
+	var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
+	var forward := Iso.to_screen(dodge_dir).normalized()
+	var center := Vector2(0.0, -r * 0.8)
+	draw_circle(center, r * 0.88, tint)
+	draw_arc(center, r * 0.88, 0.0, TAU, 24, Color(0.05, 0.1, 0.25), 2.0)
+	var seam := forward * (cos(progress * TAU) * r * 0.72)
+	draw_line(center - seam, center + seam, Color(0.78, 0.88, 1.0), 3.0)
+	draw_circle(center + forward * (sin(progress * TAU) * r * 0.57), r * 0.27,
+			Color(0.78, 0.88, 1.0))
 
 
 ## Screen-space centre of the shield: raised in front of the body, or carried at its left side.

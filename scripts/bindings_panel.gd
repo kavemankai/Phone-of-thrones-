@@ -6,7 +6,7 @@ signal closed
 const ACTION_LABELS := [
 	"Move left", "Move right", "Move up", "Move down",
 	"Aim left", "Aim right", "Aim up", "Aim down",
-	"Light attack", "Heavy attack", "Dodge", "Guard", "Pause", "Fullscreen",
+	"Light attack", "Heavy attack", "Roll", "Guard", "Pause", "Fullscreen",
 ]
 const HELP := "Select a binding to change it. Shared inputs swap where possible."
 const CAPTURE_SECONDS := 8.0

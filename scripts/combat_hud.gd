@@ -1,6 +1,6 @@
 class_name CombatHud
 extends Control
-## Hero health, guard, dodge charges, loadout and enemies remaining. Enemy health bars are
+## Hero health, stamina, guard, roll charges, loadout and enemies remaining. Enemy health bars are
 ## drawn on the enemies themselves. On PC everything sits in a bar under the arena, with the
 ## button legend for the device in use; the phone build keeps the old top-of-screen layout.
 
@@ -61,9 +61,10 @@ func _draw_bar_layout() -> void:
 	draw_rect(Rect2(x, y, w, h), Color(1, 1, 1, 0.5), false, 2.0)
 	draw_string(font, Vector2(x + 8.0, y + h - 6.0), "HP %d" % ceili(hero.hp),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+	_draw_stamina(font, Vector2(x, y + h + 8.0), 240.0)
 
 	# Guard meter: always shown on PC so the bar does not jump about.
-	var gy := y + h + 14.0
+	var gy := y + h + 33.0
 	var gw := 240.0
 	var gfrac := clampf(hero.guard / hero.guard_max(), 0.0, 1.0)
 	draw_rect(Rect2(x, gy, gw, 14.0), Color(0, 0, 0, 0.55))
@@ -85,7 +86,7 @@ func _draw_bar_layout() -> void:
 			if i == hero.dodge_charges:
 				var p := hero.dodge_recharge_t / hero.recharge_time()
 				draw_arc(c, 11.0, -PI * 0.5, -PI * 0.5 + TAU * p, 20, Color(0.45, 0.75, 1.0), 4.0)
-	draw_string(font, Vector2(x + 12.0 + charges * 34.0, dy + 6.0), "DODGE",
+	draw_string(font, Vector2(x + 12.0 + charges * 34.0, dy + 6.0), "ROLL",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
 
 	var right := size.x - inset_right - 40.0
@@ -110,6 +111,18 @@ func _draw_bar_layout() -> void:
 
 
 ## A centred row of "button badge + action" pairs for the device in use.
+func _draw_stamina(font: Font, origin: Vector2, width: float) -> void:
+	var hero := game.hero
+	var frac := clampf(hero.stamina / maxf(game.tuning.stamina_max, 1.0), 0.0, 1.0)
+	var bar := Rect2(origin, Vector2(width, 14.0))
+	var tint := Color(0.95, 0.75, 0.28) if frac > 0.25 else Color(1.0, 0.46, 0.21)
+	draw_rect(bar, Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(origin, Vector2(width * frac, bar.size.y)), tint)
+	draw_rect(bar, Color(1, 1, 1, 0.5), false, 1.5)
+	draw_string(font, origin + Vector2(width + 10.0, 13.0),
+			"STAMINA %d" % ceili(hero.stamina), HORIZONTAL_ALIGNMENT_LEFT, -1, 18, tint)
+
+
 func _draw_prompts(font: Font, center_x: float, y: float) -> void:
 	var rows := InputPrompts.combat(game.prompt_style, not game.split_attacks)
 	var glyph_size := 18
@@ -159,11 +172,12 @@ func _draw_touch_layout() -> void:
 	draw_rect(Rect2(x, y, w, h), Color(1, 1, 1, 0.5), false, 2.0)
 	draw_string(font, Vector2(x + 8.0, y + h - 5.0), "HP %d" % ceili(hero.hp),
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+	_draw_stamina(font, Vector2(x, y + h + 8.0), 200.0)
 
 	# Dodge charges.
 	var charges := hero.max_charges()
 	for i in charges:
-		var c := Vector2(x + 14.0 + i * 34.0, y + h + 22.0)
+		var c := Vector2(x + 14.0 + i * 34.0, y + h + 42.0)
 		if i < hero.dodge_charges:
 			draw_circle(c, 11.0, Color(0.45, 0.75, 1.0))
 		else:
@@ -171,12 +185,12 @@ func _draw_touch_layout() -> void:
 			if i == hero.dodge_charges:
 				var p := hero.dodge_recharge_t / hero.recharge_time()
 				draw_arc(c, 11.0, -PI * 0.5, -PI * 0.5 + TAU * p, 20, Color(0.45, 0.75, 1.0), 4.0)
-	draw_string(font, Vector2(x + 14.0 + charges * 34.0, y + h + 28.0), "DODGE",
+	draw_string(font, Vector2(x + 14.0 + charges * 34.0, y + h + 48.0), "ROLL",
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
 
 	# Guard meter: only drawn while it matters.
 	if hero.is_guarding() or hero.guard < hero.guard_max():
-		var gy := y + h + 44.0
+		var gy := y + h + 64.0
 		var gw := 200.0
 		var gfrac := clampf(hero.guard / hero.guard_max(), 0.0, 1.0)
 		draw_rect(Rect2(x, gy, gw, 12.0), Color(0, 0, 0, 0.55))

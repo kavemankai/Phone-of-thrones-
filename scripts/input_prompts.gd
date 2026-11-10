@@ -99,18 +99,18 @@ static func _default_combat(style: Style, hold_for_heavy: bool) -> Array:
 		Style.XBOX:
 			return [
 				["LS", "Move", NEUTRAL], ["RS", "Aim", NEUTRAL], ["X", "Light", BLUE],
-				["Y", "Heavy", YELLOW], ["B", "Dodge", RED], ["LB", "Guard", NEUTRAL],
+				["Y", "Heavy", YELLOW], ["B", "Roll", RED], ["LB", "Guard", NEUTRAL],
 				["Menu", "Pause", NEUTRAL],
 			]
 		Style.PLAYSTATION:
 			return [
 				["L", "Move", NEUTRAL], ["R", "Aim", NEUTRAL], ["Square", "Light", PINK],
-				["Triangle", "Heavy", GREEN], ["Circle", "Dodge", RED], ["L1", "Guard", NEUTRAL],
+				["Triangle", "Heavy", GREEN], ["Circle", "Roll", RED], ["L1", "Guard", NEUTRAL],
 				["Options", "Pause", NEUTRAL],
 			]
 	return [
 		["WASD", "Move", NEUTRAL], ["J", "Light / hold" if hold_for_heavy else "Light", NEUTRAL],
-		["L", "Heavy", NEUTRAL], ["Space", "Dodge", NEUTRAL], ["K", "Guard", NEUTRAL],
+		["L", "Heavy", NEUTRAL], ["Space", "Roll", NEUTRAL], ["K", "Guard", NEUTRAL],
 		["Esc", "Pause", NEUTRAL],
 	]
 
