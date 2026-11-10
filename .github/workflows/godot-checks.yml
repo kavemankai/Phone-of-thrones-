@@ -5,6 +5,8 @@ on:
     branches:
       - combat-polish-v0.9
   pull_request:
+    branches:
+      - combat-polish-v0.9
     paths:
       - '**/*.gd'
       - '**/*.tscn'
@@ -37,6 +39,8 @@ jobs:
 
   android-debug:
     name: Build Android debug APK
+    # Preserve Android on the legacy Shieldwall branch, but not on FORGEBREACH PRs.
+    if: ${{ github.event_name == 'push' || !startsWith(github.head_ref, 'feature/forgebreach-') }}
     needs: combat-tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
