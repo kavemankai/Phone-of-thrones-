@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - feature/forgebreach-controller-arena-crawl
+      - qa/forgebreach-m2-codex-verification
+      - feature/forgebreach-controls-stamina-campaign
   pull_request:
     branches:
       - feature/forgebreach-controller-arena-crawl
+      - feature/forgebreach-controls-stamina-campaign
   workflow_dispatch:
 
 permissions:
