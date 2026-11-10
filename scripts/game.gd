@@ -202,10 +202,14 @@ func loadout_name() -> String:
 
 
 func captain_alive() -> bool:
+	return not captain_name().is_empty()
+
+
+func captain_name() -> String:
 	for e in enemies:
 		if e.is_captain() and not e.is_dead():
-			return true
-	return false
+			return e.profile.display_name
+	return ""
 
 
 func enemies_alive() -> int:
@@ -274,6 +278,13 @@ func _prepare_room(room_size: Vector2) -> void:
 
 
 func _begin_room() -> void:
+	match arena_view.room_style:
+		3:
+			sfx.set_bed("forge")
+		4:
+			sfx.set_bed("crown_pit")
+		_:
+			sfx.set_bed("outer_walls")
 	arena_view.queue_redraw()
 	_apply_layout()
 	outcome = Outcome.NONE
@@ -510,8 +521,12 @@ func _set_state(s: State) -> void:
 	_update_touch_controls()
 	match s:
 		State.MENU:
+			sfx.set_bed("title")
 			menu.show_start()
 			menu.set_continue_available(CampaignRun.read() != null)
+		State.RESULT:
+			sfx.set_bed("")
+			menu.visible = false
 		_:
 			menu.visible = false
 	state_changed.emit(s)
