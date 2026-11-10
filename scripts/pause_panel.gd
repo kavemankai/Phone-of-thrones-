@@ -7,6 +7,7 @@ signal resume_requested
 signal restart_requested
 signal loadout_requested
 signal quit_requested
+signal controls_requested
 
 var _title: Label
 var _reason: Label
@@ -44,6 +45,7 @@ func _ready() -> void:
 	_resume.pressed.connect(func(): resume_requested.emit())
 	_button("Restart fight", box).pressed.connect(func(): restart_requested.emit())
 	_button("Change loadout", box).pressed.connect(func(): loadout_requested.emit())
+	_button("Controls", box).pressed.connect(func(): controls_requested.emit())
 	_fullscreen = _button("", box)
 	_fullscreen.pressed.connect(toggle_fullscreen)
 	_button("Quit to desktop", box).pressed.connect(func(): quit_requested.emit())

@@ -7,6 +7,7 @@ extends Control
 
 signal fight_requested(mode: int, weapon_index: int, shield: bool)
 signal quit_requested
+signal controls_requested
 
 const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 
@@ -142,9 +143,18 @@ func _ready() -> void:
 	UiFocus.style(_quit_button)
 	_quit_button.pressed.connect(_on_quit_pressed)
 	_quit_button.focus_exited.connect(_disarm_quit)
-	var quit_wrap := CenterContainer.new()
-	quit_wrap.add_child(_quit_button)
-	box.add_child(quit_wrap)
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_CENTER
+	footer.add_theme_constant_override("separation", 12)
+	box.add_child(footer)
+	var bindings := Button.new()
+	bindings.text = "Controls"
+	bindings.custom_minimum_size = Vector2(200, 42)
+	bindings.add_theme_font_size_override("font_size", 20)
+	UiFocus.style(bindings)
+	bindings.pressed.connect(func(): controls_requested.emit())
+	footer.add_child(bindings)
+	footer.add_child(_quit_button)
 	_disarm_quit()
 
 	_hint = _label(18)

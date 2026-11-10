@@ -17,6 +17,7 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 The existing project still runs as Shieldwall Combat Test; no new gameplay is claimed by these administrative commits. The displayed title FORGEBREACH is provisional.
 
 ### Activity log
+- Local controls option: title and pause menus now allow saved keyboard and controller bindings. The Windows menu, save across relaunch, and restore defaults were checked in the running game. Independent QA and physical controller checks are pending.
 - 2026-11-10: product direction switched from phone combat prototype to finite, controller-first, Windows 16:9 arena progression.
 - 2026-11-10: initialized protected feature branch at latest confirmed v0.9, prepared model-role separation and independent CI/testing workflow.
 

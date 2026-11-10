@@ -70,6 +70,9 @@ var controls: TouchControls
 var hud: CombatHud
 var menu: MenuPanel
 var pause_panel: PausePanel
+var bindings_panel: BindingsPanel
+var _bindings_return_panel: Control
+var _bindings_return_focus: Control
 var sfx: Sfx
 
 
@@ -148,6 +151,11 @@ func _ready() -> void:
 	pause_panel.restart_requested.connect(func(): start_fight(mode))
 	pause_panel.loadout_requested.connect(return_to_menu)
 	pause_panel.quit_requested.connect(func(): get_tree().quit())
+	bindings_panel = BindingsPanel.new()
+	ui.add_child(bindings_panel)
+	menu.controls_requested.connect(_open_bindings.bind(menu))
+	pause_panel.controls_requested.connect(_open_bindings.bind(pause_panel))
+	bindings_panel.closed.connect(_close_bindings)
 
 	sfx = Sfx.new()
 	add_child(sfx)
@@ -363,17 +371,28 @@ func _poll_devices() -> void:
 ## Button edges. Each press sets a one-step flag in CombatInput, which the next simulation
 ## sub-step consumes and clears, so a press is acted on once however long the frame was.
 func _input(event: InputEvent) -> void:
+	if bindings_panel != null and bindings_panel.visible:
+		if bindings_panel.handle_event(event):
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.echo:
 		return
 	_note_device(event)
-	if event.is_action_pressed(InputActions.FULLSCREEN):
+	var menu_input := false
+	if state != State.FIGHTING or paused:
+		for action: StringName in [&"ui_accept", &"ui_cancel", &"ui_up", &"ui_down", &"ui_left", &"ui_right"]:
+			if event.is_action(action):
+				menu_input = true
+				break
+	if not menu_input and event.is_action_pressed(InputActions.FULLSCREEN):
 		pause_panel.toggle_fullscreen()
 		return
 	if state != State.FIGHTING:
 		return
 	if paused:
 		# Pause again or Back closes the pause. Everything else belongs to the panel.
-		if event.is_action_pressed(InputActions.PAUSE) or event.is_action_pressed(&"ui_cancel"):
+		if event.is_action_pressed(&"ui_cancel") or (
+				not menu_input and event.is_action_pressed(InputActions.PAUSE)):
 			resume_game()
 			get_viewport().set_input_as_handled()
 		return
@@ -382,6 +401,21 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 		return
 	_combat_event(event)
+
+
+func _open_bindings(panel: Control) -> void:
+	_bindings_return_panel = panel
+	_bindings_return_focus = get_viewport().gui_get_focus_owner()
+	panel.hide()
+	bindings_panel.open(prompt_style)
+
+
+func _close_bindings() -> void:
+	InputActions.release_all()
+	_apply_prompt_style()
+	_bindings_return_panel.show()
+	if is_instance_valid(_bindings_return_focus):
+		_bindings_return_focus.grab_focus()
 
 
 func _combat_event(event: InputEvent) -> void:
@@ -602,6 +636,7 @@ func _apply_layout() -> void:
 	controls.layout(vp, band_h, insets)
 	menu.layout(vp)
 	pause_panel.layout(vp)
+	bindings_panel.size = vp
 
 
 ## Safe-area margins (left, top, right, bottom) in canvas pixels. Zero on desktop.
