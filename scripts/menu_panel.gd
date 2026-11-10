@@ -11,6 +11,8 @@ signal controls_requested
 signal campaign_requested(weapon_index: int, shield: bool)
 signal continue_requested
 
+const TITLE_ART := preload("res://assets/ui/title.webp")
+const ENDING_ART := preload("res://assets/ui/ending.webp")
 const MODE_NAMES := ["1 Enemy", "3 + Captain", "Captain only"]
 
 var mode := 1
@@ -19,6 +21,7 @@ var shield := false
 var split_attacks := false
 var directional_guard := false
 
+var _art: TextureRect
 var _title: Label
 var _info: Label
 var _weapon_desc: Label
@@ -43,8 +46,14 @@ var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
+	_art = TextureRect.new()
+	_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_art)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.7)
+	dim.color = Color(0.03, 0.025, 0.025, 0.66)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(dim)
@@ -134,7 +143,7 @@ func _ready() -> void:
 	UiFocus.style(_fight_button)
 	for style_name in ["normal", "hover", "pressed"]:
 		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color(0.2, 0.62, 0.3) if style_name != "pressed" else Color(0.14, 0.45, 0.22)
+		sb.bg_color = Color(0.42, 0.26, 0.14) if style_name != "pressed" else Color(0.30, 0.17, 0.09)
 		sb.set_corner_radius_all(10)
 		_fight_button.add_theme_stylebox_override(style_name, sb)
 	_fight_button.pressed.connect(func(): fight_requested.emit(mode, weapon_index, shield_usable()))
@@ -195,7 +204,9 @@ func set_weapons(list: Array[Weapon]) -> void:
 	_weapon_buttons.clear()
 	for i in list.size():
 		var b := _toggle(list[i].display_name, _weapon_group, Vector2(160, 58))
-		b.add_theme_font_size_override("font_size", 22)
+		b.icon = ForgeArt.EQUIPMENT[list[i].id]
+		b.add_theme_constant_override("icon_max_width", 28)
+		b.add_theme_font_size_override("font_size", 20)
 		b.pressed.connect(func(): set_weapon(i))
 		_weapon_row.add_child(b)
 		_weapon_buttons.append(b)
@@ -256,8 +267,9 @@ func set_mode(m: int) -> void:
 
 
 func show_start() -> void:
+	_art.texture = TITLE_ART
 	_title.text = "FORGEBREACH"
-	_title.modulate = Color.WHITE
+	_title.modulate = Color(1.0, 0.86, 0.64)
 	_info.text = "Pick a weapon, then start a campaign or enter the Test Room."
 	_fight_button.text = "Test Room"
 	_disarm_campaign()
@@ -266,6 +278,7 @@ func show_start() -> void:
 
 
 func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_name: String) -> void:
+	_art.texture = ENDING_ART if victory else null
 	_title.text = "VICTORY" if victory else "DEFEAT"
 	_title.modulate = Color(0.5, 1.0, 0.55) if victory else Color(1.0, 0.4, 0.35)
 	_info.text = "%s, %s.  Time %.1f s.  Health left %d." % [weapon_name, MODE_NAMES[m], seconds, ceili(hp_left)]
@@ -275,10 +288,13 @@ func show_result(victory: bool, seconds: float, hp_left: float, m: int, weapon_n
 	visible = true
 
 
-func show_campaign_result(cleared: bool, room: String) -> void:
+## End of a run or of an attempt: `heading` is the title, `details` the lines under it.
+func show_campaign_result(cleared: bool, heading: String, details: String) -> void:
 	show_start()
-	_title.text = "SLICE COMPLETE" if cleared else "DEFEAT"
-	_info.text = "Gatehouse, Kennels and Hall cleared." if cleared else "Checkpoint: %s" % room
+	_art.texture = ENDING_ART if cleared else null
+	_title.text = heading
+	_title.modulate = Color(0.5, 1.0, 0.55) if cleared else Color(1.0, 0.4, 0.35)
+	_info.text = details
 	_fight_button.text = "Test Room" if cleared else "Retry room"
 
 

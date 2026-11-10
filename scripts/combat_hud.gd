@@ -45,7 +45,7 @@ func _draw() -> void:
 func _draw_campaign() -> void:
 	var font := ThemeDB.fallback_font
 	var room := game.campaign.room()
-	var header := "%d / %d   %s" % [game.campaign.stage + 1, CampaignRun.ROOMS.size(), room.name]
+	var header := "%d / %d   %s" % [game.campaign.stage + 1, game.campaign.stage_count(), room.name]
 	var width := 620.0 if game.touch_ui else 780.0
 	var x := (size.x - width) * 0.5
 	var y := (150.0 if game.touch_ui else 36.0) + inset_top
@@ -53,6 +53,9 @@ func _draw_campaign() -> void:
 	if not game.checkpoint_message.is_empty():
 		draw_string(font, Vector2(x, y + 26.0), game.checkpoint_message,
 				HORIZONTAL_ALIGNMENT_CENTER, width, 18, Color.ORANGE)
+	if game.wave_notice > 0.0 and game.state == Game.State.FIGHTING:
+		draw_string(font, Vector2(x, size.y * 0.5), "REINFORCEMENTS",
+				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color(1.0, 0.8, 0.3))
 	if game.state == Game.State.ROOM_CLEAR:
 		draw_string(font, Vector2(x, size.y * 0.5), "ROOM CLEAR",
 				HORIZONTAL_ALIGNMENT_CENTER, width, 38, Color.WHITE)
@@ -150,7 +153,7 @@ func _draw_bar_layout() -> void:
 
 	var right := size.x - inset_right - 40.0
 	var captain := game.captain_alive()
-	var label := "Captain" if captain else "Enemies: %d" % game.enemies_alive()
+	var label := game.captain_name() if captain else "Enemies: %d" % game.enemies_alive()
 	draw_string(font, Vector2(right - 320.0, y + h - 2.0), label, HORIZONTAL_ALIGNMENT_RIGHT,
 			320.0, 30, Color(1.0, 0.8, 0.3) if captain else Color.WHITE)
 	draw_string(font, Vector2(right - 320.0, y + h + 28.0), game.loadout_name(),
@@ -258,9 +261,10 @@ func _draw_touch_layout() -> void:
 		draw_string(font, Vector2(x + gw + 10.0, gy + 12.0), "GUARD", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
 
 	var right := size.x - inset_right - 24.0
-	var label := "Captain" if game.captain_alive() else "Enemies: %d" % game.enemies_alive()
+	var captain := game.captain_name()
+	var label := captain if not captain.is_empty() else "Enemies: %d" % game.enemies_alive()
 	draw_string(font, Vector2(right - 260.0, y + h - 2.0), label,
-			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color(1.0, 0.8, 0.3) if game.captain_alive() else Color.WHITE)
+			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 28, Color(1.0, 0.8, 0.3) if not captain.is_empty() else Color.WHITE)
 	draw_string(font, Vector2(right - 260.0, y + h + 24.0), game.loadout_name(),
 			HORIZONTAL_ALIGNMENT_RIGHT, 260.0, 20, Color(1, 1, 1, 0.6))
 	var trial := ("SPLIT" if game.split_attacks else "HOLD") + " / " + ("DIR" if game.directional_guard else "360")

@@ -22,6 +22,21 @@ extends Resource
 @export var heavy_stagger_mult := 1.0
 ## Share of this enemy's max HP that an executing parry (Weapon.parry_kill) takes: 1 kills it.
 @export var execute_fraction := 1.0
+## Front shield: a hit arriving inside this arc (degrees, centred on facing) is multiplied
+## by front_guard_mult and cannot stagger or shove. 0 means no shield. The shield is down
+## while the enemy recovers from its own attack or is staggered.
+@export var front_guard_arc := 0.0
+@export var front_guard_mult := 1.0
+## Never takes an attack slot; it only keeps its distance.
+@export var passive := false
+## Other living enemies within aura_range move aura_speed_mult times as fast. 0 means none.
+@export var aura_range := 0.0
+@export var aura_speed_mult := 1.0
+## Second phase: when health falls to this share of max (0 means never) the enemy reels
+## for a moment, then uses phase2_pattern and moves phase2_speed_mult times as fast.
+@export var phase2_at := 0.0
+@export var phase2_pattern: PackedInt32Array = PackedInt32Array()
+@export var phase2_speed_mult := 1.0
 @export var attacks: Array[AttackDef] = []
 ## Attack indices used in order, repeating. An entry is skipped when the hero is closer
 ## than that attack's min_range.
