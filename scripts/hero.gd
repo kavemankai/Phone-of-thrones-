@@ -45,6 +45,11 @@ var flash := 0.0
 var radius := 16.0
 var guard := 0.0
 var run_guard_bonus := 0.0
+## Run pickups in effect (Boon ids as keys). Empty outside a campaign run.
+var boons: Dictionary = {}
+## Seconds left in which the next attack is a Riposte / a Slipstream attack.
+var riposte_left := 0.0
+var slipstream_left := 0.0
 var guard_wait := 0.0
 var block_cd := 0.0
 var parry_flash := 0.0
@@ -82,7 +87,8 @@ func equip(w: Weapon, shield: bool) -> void:
 
 ## Weapon-adjusted numbers. Everything else about the hero comes straight from Tuning.
 func max_charges() -> int:
-	return tuning.dodge_max_charges + weapon.extra_dodge_charges
+	return tuning.dodge_max_charges + weapon.extra_dodge_charges \
+			+ (1 if boons.has(Boon.THIRD_STEP) else 0)
 
 
 func recharge_time() -> float:
@@ -121,7 +127,8 @@ func block_stun_time() -> float:
 
 
 func parry_window() -> float:
-	return tuning.parry_window_shield if has_shield else tuning.parry_window_bare
+	var window := tuning.parry_window_shield if has_shield else tuning.parry_window_bare
+	return window + (Boon.PATIENT_GUARD_BONUS if boons.has(Boon.PATIENT_GUARD) else 0.0)
 
 
 ## The breather before the captain: some health back and a full set of dodges.
@@ -140,6 +147,8 @@ func reset(pos: Vector2) -> void:
 	hp = tuning.hero_max_hp
 	stamina = tuning.stamina_max
 	stamina_wait = 0.0
+	riposte_left = 0.0
+	slipstream_left = 0.0
 	facing = Vector2.UP
 	charge_time = 0.0
 	immune_time = 0.0
@@ -220,6 +229,8 @@ func step(dt: float, enemies: Array) -> void:
 	block_cd = maxf(0.0, block_cd - dt)
 	_regen_guard(dt)
 	_regen_stamina(dt)
+	riposte_left = maxf(0.0, riposte_left - dt)
+	slipstream_left = maxf(0.0, slipstream_left - dt)
 	state_time += dt
 	match state:
 		State.IDLE:
@@ -317,6 +328,10 @@ func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult
 			parry_flash = 0.3
 			_show_cue("PARRY", Color(1.0, 0.85, 0.22))
 			guard_wait = tuning.guard_regen_delay
+			if boons.has(Boon.RIPOSTE):
+				riposte_left = Boon.RIPOSTE_WINDOW
+			if boons.has(Boon.SECOND_WIND):
+				stamina = minf(tuning.stamina_max, stamina + Boon.SECOND_WIND_STAMINA)
 			blocked.emit(true)
 			return HitResult.PARRIED
 		if has_shield or not atk.breaks_bare_guard:
@@ -352,7 +367,8 @@ func _absorb(damage: float, atk: AttackDef) -> void:
 func _spend_stamina(cost: float) -> void:
 	if cost > 0.0:
 		stamina = maxf(0.0, stamina - cost)
-		stamina_wait = tuning.stamina_regen_delay
+		stamina_wait = tuning.stamina_regen_delay \
+				* (Boon.IRON_LUNGS_DELAY_MULT if boons.has(Boon.IRON_LUNGS) else 1.0)
 
 
 func _try_spend_stamina(cost: float) -> bool:
@@ -425,13 +441,32 @@ func _step_charging(dt: float) -> void:
 func _start_attack(heavy: bool) -> void:
 	charge_time = 0.0
 	var cost := tuning.stamina_heavy_cost if heavy else tuning.stamina_light_cost
+	var slipstream := slipstream_left > 0.0
+	if slipstream:
+		cost = 0.0
 	if not _try_spend_stamina(cost):
 		_enter(State.IDLE)
 		return
 	cur_attack = weapon.attack_data(heavy)
+	_apply_boons_to_attack(heavy, slipstream)
 	_aim_assist()
 	hit_ids = {}
 	_enter(State.WINDUP)
+
+
+## Pickups that change this one swing. cur_attack is a fresh copy, so the weapon is never
+## edited, and the drawn wedge still matches the hit area because both read cur_attack.
+func _apply_boons_to_attack(heavy: bool, slipstream: bool) -> void:
+	if slipstream:
+		slipstream_left = 0.0
+		cur_attack.windup *= Boon.SLIPSTREAM_WINDUP_MULT
+	if riposte_left > 0.0:
+		riposte_left = 0.0
+		cur_attack.damage *= Boon.RIPOSTE_DAMAGE_MULT
+		_show_cue("RIPOSTE", Color(1.0, 0.85, 0.22))
+	if heavy and boons.has(Boon.HEAVY_HAND):
+		cur_attack.reach *= Boon.HEAVY_HAND_REACH_MULT
+		cur_attack.knockback += Boon.HEAVY_HAND_KNOCKBACK
 
 
 func _aim_assist() -> void:
@@ -469,6 +504,8 @@ func _apply_hits() -> void:
 				e.position, e.radius):
 			hit_ids[id] = true
 			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
+			if e.is_dead() and boons.has(Boon.BLOOD_PRICE):
+				hp = minf(tuning.hero_max_hp, hp + Boon.BLOOD_PRICE_HEAL)
 			hit_landed.emit(e, cur_attack.heavy)
 
 
@@ -486,6 +523,9 @@ func _try_dodge() -> bool:
 	if state == State.BLOCK:
 		block_cd = tuning.block_reraise_delay
 	_enter(State.DODGE)
+	if boons.has(Boon.SLIPSTREAM):
+		# Counted from the end of the roll, so the whole window is usable.
+		slipstream_left = tuning.dodge_duration + Boon.SLIPSTREAM_WINDOW
 	dodged.emit()
 	return true
 

@@ -253,6 +253,7 @@ func _prepare_room(room_size: Vector2) -> void:
 	controls.separate_attacks = split_attacks
 	hero.equip(weapon(), shield_on)
 	hero.run_guard_bonus = float(campaign.guard_bonus) if campaign != null else 0.0
+	hero.boons = campaign.boon_set() if campaign != null else {}
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
@@ -281,6 +282,7 @@ func _new_campaign(w: int, shield: bool) -> void:
 	campaign.split = menu.split_attacks
 	campaign.directional = menu.directional_guard
 	campaign.hp = tuning.hero_max_hp
+	campaign.run_seed = randi()
 	_save_campaign()
 	_start_campaign_room()
 
