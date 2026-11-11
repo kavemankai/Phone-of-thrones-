@@ -43,6 +43,125 @@ func _draw() -> void:
 
 
 func _draw_campaign() -> void:
+	if game.touch_ui:
+		_draw_campaign_touch()
+	else:
+		_draw_campaign_desktop()
+
+
+## PC: room name and carried pickups in the top-left corner, which the arena diamond leaves
+## free. When the doors open, one card per door sits in the bottom corners above the status
+## strip, so nothing is drawn over the health bars or the button legend.
+func _draw_campaign_desktop() -> void:
+	var font := ThemeDB.fallback_font
+	var run := game.campaign
+	var room := run.room()
+	var x := inset_left + 24.0
+	var y := inset_top + 32.0
+	draw_string(font, Vector2(x, y), "%d / %d   %s" % [run.stage + 1, run.stage_count(), room.name],
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 22, room.light.lightened(0.45))
+	y += 22.0
+	if not game.checkpoint_message.is_empty():
+		draw_string(font, Vector2(x, y), game.checkpoint_message,
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.ORANGE)
+		y += 20.0
+	for title in Boon.titles(run.boons):
+		draw_string(font, Vector2(x, y), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+				Color(1.0, 0.83, 0.35, 0.9))
+		y += 18.0
+
+	var mid_y := (size.y - bar_height) * 0.46
+	if game.wave_notice > 0.0 and game.state == Game.State.FIGHTING:
+		_draw_banner(font, "REINFORCEMENTS", mid_y, Color(1.0, 0.8, 0.3))
+	if game.state == Game.State.ROOM_CLEAR:
+		_draw_banner(font, "ROOM CLEAR", mid_y, Color.WHITE)
+	if game.state != Game.State.DOOR_CHOICE:
+		return
+
+	var near := game.arena_view.near_door
+	var instruction := "Walk to a door" if near < 0 else "Press %s to enter door %d" % [
+		InputPrompts.confirm(game.prompt_style), near + 1]
+	var strip_top := size.y - bar_height
+	var note_w := font.get_string_size(instruction, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 36.0
+	var note := Rect2((size.x - note_w) * 0.5, strip_top - 44.0, note_w, 34.0)
+	draw_rect(note, Color(0.05, 0.05, 0.06))
+	draw_rect(note, Color(1.0, 0.83, 0.35, 0.8), false, 2.0)
+	draw_string(font, Vector2(note.position.x, note.position.y + 24.0), instruction,
+			HORIZONTAL_ALIGNMENT_CENTER, note_w, 20, Color.WHITE)
+
+	var choices := run.choices()
+	var card := Vector2(340.0, 158.0)
+	for i in choices.size():
+		var choice: Dictionary = choices[i]
+		var left := inset_left + 24.0 if i == 0 else size.x - inset_right - 24.0 - card.x
+		var box := Rect2(left, strip_top - card.y - 10.0, card.x, card.y)
+		var chosen := near == i
+		var ink := Color(1.0, 0.83, 0.35) if chosen else Color(0.82, 0.86, 0.92)
+		draw_rect(box, Color(0.05, 0.05, 0.06))
+		draw_rect(box, ink if chosen else Color(1, 1, 1, 0.25), false, 3.0 if chosen else 2.0)
+		var line := box.position.y + 28.0
+		draw_string(font, Vector2(left, line), "Door %d   %s" % [i + 1, choice.door],
+				HORIZONTAL_ALIGNMENT_CENTER, card.x, 21, ink)
+		var foes := CampaignRun.foe_summary(choice.foes)
+		for wave: Array in choice.get("waves", []):
+			foes.append("then " + ", ".join(CampaignRun.foe_summary(wave)))
+		line += 24.0
+		draw_string(font, Vector2(left, line), " + ".join(foes.slice(0, 2)),
+				HORIZONTAL_ALIGNMENT_CENTER, card.x, 16, ink)
+		line += 20.0
+		if foes.size() > 2:
+			draw_string(font, Vector2(left, line), "+ " + " + ".join(foes.slice(2)),
+					HORIZONTAL_ALIGNMENT_CENTER, card.x, 16, ink)
+		line += 22.0
+		var reward := "+%d health" % choice.heal
+		var bonus := run.guard_reward(i)
+		if bonus > 0:
+			reward += "   +%d max guard" % bonus
+		draw_string(font, Vector2(left, line), reward,
+				HORIZONTAL_ALIGNMENT_CENTER, card.x, 15, ink)
+		var pickup := run.offer(i)
+		if pickup != "":
+			line += 28.0
+			draw_string(font, Vector2(left, line), Boon.title(pickup),
+					HORIZONTAL_ALIGNMENT_CENTER, card.x, 19, Color(1.0, 0.83, 0.35))
+			line += 19.0
+			draw_string(font, Vector2(left, line), Boon.text(pickup),
+					HORIZONTAL_ALIGNMENT_CENTER, card.x, 13, Color(0.82, 0.86, 0.92))
+
+
+func _draw_banner(font: Font, text: String, y: float, tint: Color) -> void:
+	draw_string(font, Vector2(2.0, y + 2.0), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, 40,
+			Color(0, 0, 0, 0.85))
+	draw_string(font, Vector2(0.0, y), text, HORIZONTAL_ALIGNMENT_CENTER, size.x, 40, tint)
+
+
+## A named health bar in the top-right corner while a captain is alive, with a notch where
+## its second phase begins.
+func _draw_boss_bar(font: Font) -> void:
+	var boss: Enemy = null
+	for e: Enemy in game.enemies:
+		if e.is_captain() and not e.is_dead():
+			boss = e
+			break
+	if boss == null:
+		return
+	var w := 360.0
+	var x := size.x - inset_right - 24.0 - w
+	var y := inset_top + 18.0
+	draw_string(font, Vector2(x, y + 16.0), boss.profile.display_name,
+			HORIZONTAL_ALIGNMENT_RIGHT, w, 20, Color(1.0, 0.8, 0.3))
+	var bar := Rect2(x, y + 24.0, w, 14.0)
+	var frac := clampf(boss.hp / maxf(boss.profile.max_hp, 1.0), 0.0, 1.0)
+	draw_rect(bar, Color(0, 0, 0, 0.7))
+	draw_rect(Rect2(bar.position, Vector2(w * frac, bar.size.y)), Color(0.85, 0.22, 0.2))
+	draw_rect(bar, Color(1, 1, 1, 0.55), false, 2.0)
+	if boss.phase == 1 and boss.profile.phase2_at > 0.0:
+		var notch := x + w * boss.profile.phase2_at
+		draw_line(Vector2(notch, bar.position.y - 3.0), Vector2(notch, bar.end.y + 3.0),
+				Color(1.0, 0.85, 0.3), 2.0)
+
+
+func _draw_campaign_touch() -> void:
 	var font := ThemeDB.fallback_font
 	var room := game.campaign.room()
 	var header := "%d / %d   %s" % [game.campaign.stage + 1, game.campaign.stage_count(), room.name]
@@ -102,65 +221,73 @@ func _draw_campaign() -> void:
 					HORIZONTAL_ALIGNMENT_CENTER, width * 0.5, 14, color)
 
 
-## PC layout: one bar under the arena. Left: health, dodges, guard. Right: enemies and
-## loadout. Bottom row: what each button does.
+## PC layout: a thin strip under the arena. Top row: health, stamina, guard and roll
+## charges on the left, enemies and loadout on the right. Bottom row: what each button does.
 func _draw_bar_layout() -> void:
 	var t := game.tuning
 	var hero := game.hero
 	var font := ThemeDB.fallback_font
 	var top := size.y - bar_height
-	draw_rect(Rect2(0.0, top, size.x, bar_height), Color(0, 0, 0, 0.3))
+	draw_rect(Rect2(0.0, top, size.x, bar_height), Color(0, 0, 0, 0.45))
 	draw_line(Vector2(0.0, top), Vector2(size.x, top), Color(1, 1, 1, 0.14), 2.0)
 
-	var x := inset_left + 40.0
-	var y := top + 20.0
-	var w := 380.0
-	var h := 28.0
+	var x := inset_left + 24.0
+	var y := top + 11.0
+	var w := 300.0
+	var h := 26.0
 	draw_rect(Rect2(x, y, w, h), Color(0, 0, 0, 0.55))
 	var frac := clampf(hero.hp / t.hero_max_hp, 0.0, 1.0)
 	var col := Color(0.35, 0.8, 0.4) if frac > 0.35 else Color(0.95, 0.3, 0.25)
 	draw_rect(Rect2(x, y, w * frac, h), col)
 	draw_rect(Rect2(x, y, w, h), Color(1, 1, 1, 0.5), false, 2.0)
 	draw_string(font, Vector2(x + 8.0, y + h - 6.0), "HP %d" % ceili(hero.hp),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
-	_draw_stamina(font, Vector2(x, y + h + 8.0), 240.0)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 19, Color.WHITE)
 
-	# Guard meter: always shown on PC so the bar does not jump about.
-	var gy := y + h + 33.0
-	var gw := 240.0
+	# Stamina over guard, beside the health bar.
+	var sx := x + w + 16.0
+	var sw := 170.0
+	var sfrac := clampf(hero.stamina / maxf(t.stamina_max, 1.0), 0.0, 1.0)
+	var stint := Color(0.95, 0.75, 0.28) if sfrac > 0.25 else Color(1.0, 0.46, 0.21)
+	draw_rect(Rect2(sx, y, sw, 11.0), Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(sx, y, sw * sfrac, 11.0), stint)
+	draw_rect(Rect2(sx, y, sw, 11.0), Color(1, 1, 1, 0.5), false, 1.5)
+	draw_string(font, Vector2(sx + sw + 8.0, y + 11.0), "STAMINA", HORIZONTAL_ALIGNMENT_LEFT,
+			-1, 14, stint)
+	var gy := y + 15.0
 	var gfrac := clampf(hero.guard / hero.guard_max(), 0.0, 1.0)
-	draw_rect(Rect2(x, gy, gw, 14.0), Color(0, 0, 0, 0.55))
-	draw_rect(Rect2(x, gy, gw * gfrac, 14.0),
+	draw_rect(Rect2(sx, gy, sw, 11.0), Color(0, 0, 0, 0.55))
+	draw_rect(Rect2(sx, gy, sw * gfrac, 11.0),
 			Color(0.55, 0.85, 1.0) if gfrac > 0.3 else Color(1.0, 0.5, 0.25))
-	draw_rect(Rect2(x, gy, gw, 14.0), Color(1, 1, 1, 0.5), false, 1.5)
-	draw_string(font, Vector2(x + gw + 10.0, gy + 13.0), "GUARD", HORIZONTAL_ALIGNMENT_LEFT,
-			-1, 18, Color(1, 1, 1, 0.6))
+	draw_rect(Rect2(sx, gy, sw, 11.0), Color(1, 1, 1, 0.5), false, 1.5)
+	draw_string(font, Vector2(sx + sw + 8.0, gy + 11.0), "GUARD", HORIZONTAL_ALIGNMENT_LEFT,
+			-1, 14, Color(1, 1, 1, 0.6))
 
-	# Dodge charges.
+	# Roll charges.
 	var charges := hero.max_charges()
-	var dy := gy + 14.0 + 26.0
+	var rx := sx + sw + 96.0
+	var ry := y + h * 0.5
 	for i in charges:
-		var c := Vector2(x + 12.0 + i * 34.0, dy)
+		var c := Vector2(rx + i * 26.0, ry)
 		if i < hero.dodge_charges:
-			draw_circle(c, 11.0, Color(0.45, 0.75, 1.0))
+			draw_circle(c, 9.0, Color(0.45, 0.75, 1.0))
 		else:
-			draw_arc(c, 11.0, 0.0, TAU, 20, Color(0.45, 0.75, 1.0, 0.6), 3.0)
+			draw_arc(c, 9.0, 0.0, TAU, 20, Color(0.45, 0.75, 1.0, 0.6), 2.5)
 			if i == hero.dodge_charges:
 				var p := hero.dodge_recharge_t / hero.recharge_time()
-				draw_arc(c, 11.0, -PI * 0.5, -PI * 0.5 + TAU * p, 20, Color(0.45, 0.75, 1.0), 4.0)
-	draw_string(font, Vector2(x + 12.0 + charges * 34.0, dy + 6.0), "ROLL",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 1, 1, 0.6))
+				draw_arc(c, 9.0, -PI * 0.5, -PI * 0.5 + TAU * p, 20, Color(0.45, 0.75, 1.0), 3.5)
+	draw_string(font, Vector2(rx + charges * 26.0 - 6.0, ry + 5.0), "ROLL",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.6))
 
-	var right := size.x - inset_right - 40.0
+	var right := size.x - inset_right - 24.0
 	var captain := game.captain_alive()
 	var label := game.captain_name() if captain else "Enemies: %d" % game.enemies_alive()
-	draw_string(font, Vector2(right - 320.0, y + h - 2.0), label, HORIZONTAL_ALIGNMENT_RIGHT,
-			320.0, 30, Color(1.0, 0.8, 0.3) if captain else Color.WHITE)
-	draw_string(font, Vector2(right - 320.0, y + h + 28.0), game.loadout_name(),
-			HORIZONTAL_ALIGNMENT_RIGHT, 320.0, 22, Color(1, 1, 1, 0.7))
+	draw_string(font, Vector2(right - 300.0, y + 20.0), label, HORIZONTAL_ALIGNMENT_RIGHT,
+			300.0, 24, Color(1.0, 0.8, 0.3) if captain else Color.WHITE)
+	var loadout := game.loadout_name()
 	if game.directional_guard:
-		draw_string(font, Vector2(right - 320.0, y + h + 54.0), "Directional guard trial",
-				HORIZONTAL_ALIGNMENT_RIGHT, 320.0, 18, Color(1.0, 0.85, 0.45))
+		loadout += "  ·  directional guard"
+	draw_string(font, Vector2(right - 300.0, y + 38.0), loadout,
+			HORIZONTAL_ALIGNMENT_RIGHT, 300.0, 15, Color(1, 1, 1, 0.7))
 
 	if game.intermission_active:
 		var cx := size.x * 0.5
@@ -169,7 +296,8 @@ func _draw_bar_layout() -> void:
 		draw_string(font, Vector2(cx - 300.0, 190.0), "+%d health, dodges restored" % int(t.captain_heal),
 				HORIZONTAL_ALIGNMENT_CENTER, 600.0, 24, Color(0.7, 1.0, 0.7))
 
-	_draw_prompts(font, size.x * 0.5, size.y - inset_bottom - 34.0)
+	_draw_boss_bar(font)
+	_draw_prompts(font, size.x * 0.5, size.y - inset_bottom - 24.0)
 
 
 ## A centred row of "button badge + action" pairs for the device in use.

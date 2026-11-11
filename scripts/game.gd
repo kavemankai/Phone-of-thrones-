@@ -16,6 +16,8 @@ const MAX_FRAME_DT := 0.1
 const HUD_HEIGHT := 110.0
 ## Gap above the arena on PC, where the status bar sits under the arena instead.
 const ARENA_TOP_MARGIN := 14.0
+## Height of the PC status strip under the arena. The phone build keeps its touch band.
+const DESKTOP_BAR_HEIGHT := 96.0
 const TUNING_PATH := "res://resources/tuning.tres"
 const HERO_SCENE := preload("res://scenes/hero.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
@@ -876,9 +878,9 @@ func _apply_layout() -> void:
 	var insets := _safe_insets(vp)
 	# The strip under the arena: touch buttons on a phone, the status bar and button legend
 	# on PC. The arena never reaches into it.
-	var band_h := vp.y * tuning.control_band_fraction
+	var band_h := vp.y * tuning.control_band_fraction if touch_ui else DESKTOP_BAR_HEIGHT + insets.w
 	var top := insets.y + (HUD_HEIGHT if touch_ui else ARENA_TOP_MARGIN)
-	if campaign != null:
+	if campaign != null and touch_ui:
 		top += 35.0
 	var free := Rect2(
 		insets.x + 10.0,

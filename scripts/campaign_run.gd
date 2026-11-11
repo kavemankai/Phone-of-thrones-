@@ -302,7 +302,7 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 			profile.radius = 14.0
 			profile.hover_range = 150.0
 			profile.passive = true
-			profile.aura_range = 170.0
+			profile.aura_range = 105.0
 			profile.aura_speed_mult = 1.35
 			var jab := AttackDef.make("Staff", 6.0, 55.0, 40.0, 0.70, 0.10, 0.90)
 			jab.max_range = 52.0
