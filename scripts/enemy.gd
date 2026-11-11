@@ -393,7 +393,8 @@ func _draw() -> void:
 			draw_arc(Vector2.ZERO, radius + 9.0, mid - half_arc, mid + half_arc, 18, tint, 5.0)
 	if profile.aura_range > 0.0:
 		# The Herald's reach: enemies inside this ring are faster.
-		draw_arc(Vector2.ZERO, profile.aura_range, 0.0, TAU, 64, Color(profile.color, 0.28), 2.0)
+		draw_circle(Vector2.ZERO, profile.aura_range, Color(profile.color, 0.05))
+		draw_arc(Vector2.ZERO, profile.aura_range, 0.0, TAU, 64, Color(profile.color, 0.22), 1.5)
 	if speed_buff > 1.0:
 		draw_arc(Vector2.ZERO, radius + 2.0, 0.0, TAU, 24, Color(1.0, 0.85, 0.3, 0.85), 2.0)
 

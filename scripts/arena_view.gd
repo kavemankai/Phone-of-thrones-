@@ -76,10 +76,19 @@ func _draw_cover(footprint: Rect2) -> void:
 	draw_rect(footprint, Color(0.10, 0.08, 0.07, 0.84))
 	draw_rect(footprint, Color(room_light, 0.70), false, 2.0)
 	var texture: Texture2D = COVER_ART.get(room_style, COVER_ART[0])
-	var span := footprint.size.x + footprint.size.y
-	var height := span * (0.39 if room_style == 0 else 0.57)
-	draw_set_transform_matrix(Transform2D(0.0, footprint.get_center()) * Iso.upright())
-	draw_texture_rect(texture, Rect2(-span * 0.45, -height + 9.0, span * 0.90, height), false)
+	# On screen the footprint is a diamond (x + y) wide and half that tall, centred on the
+	# footprint's centre. The prop keeps its painted proportions, is as wide as that diamond
+	# and stands with its base on the diamond's front corner, so the art covers the area
+	# that blocks movement. The anvil is drawn a little narrower than its block.
+	var fill := 0.85 if room_style == 3 else 1.0
+	var width := (footprint.size.x + footprint.size.y) * fill
+	var height := width * float(texture.get_height()) / float(texture.get_width())
+	# The props are painted running down to the right; mirror them for cover that is
+	# longer the other way.
+	var mirror := -1.0 if footprint.size.y > footprint.size.x else 1.0
+	draw_set_transform_matrix(Transform2D(0.0, footprint.get_center()) * Iso.upright()
+			* Transform2D(0.0, Vector2(mirror, 1.0), 0.0, Vector2.ZERO))
+	draw_texture_rect(texture, Rect2(-width * 0.5, -height + width * 0.25, width, height), false)
 	draw_set_transform(Vector2.ZERO)
 
 

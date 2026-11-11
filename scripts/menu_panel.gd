@@ -41,6 +41,9 @@ var _weapon_buttons: Array[Button] = []
 var _weapons: Array[Weapon] = []
 var _mode_buttons: Array[Button] = []
 var _hint: Label
+## The button that takes the focus when the panel appears.
+var _default_focus: Control
+var _campaign_label := "New campaign"
 var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 
 
@@ -62,9 +65,20 @@ func _ready() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 
+	# A dark plate behind the column, so text never sits straight on the painting.
+	var plate := PanelContainer.new()
+	var plate_style := StyleBoxFlat.new()
+	plate_style.bg_color = Color(0.04, 0.035, 0.035, 0.86)
+	plate_style.border_color = Color(0.62, 0.50, 0.32, 0.55)
+	plate_style.set_border_width_all(2)
+	plate_style.set_corner_radius_all(12)
+	plate_style.set_content_margin_all(14.0)
+	plate.add_theme_stylebox_override("panel", plate_style)
+	center.add_child(plate)
+
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	center.add_child(box)
+	box.add_theme_constant_override("separation", 6)
+	plate.add_child(box)
 
 	_title = _label(50)
 	box.add_child(_title)
@@ -272,6 +286,8 @@ func show_start() -> void:
 	_title.modulate = Color(1.0, 0.86, 0.64)
 	_info.text = "Pick a weapon, then start a campaign or enter the Test Room."
 	_fight_button.text = "Test Room"
+	_default_focus = _fight_button
+	_campaign_label = "New campaign"
 	_disarm_campaign()
 	_disarm_quit()
 	visible = true
@@ -296,6 +312,13 @@ func show_campaign_result(cleared: bool, heading: String, details: String) -> vo
 	_title.modulate = Color(0.5, 1.0, 0.55) if cleared else Color(1.0, 0.4, 0.35)
 	_info.text = details
 	_fight_button.text = "Test Room" if cleared else "Retry room"
+	if cleared:
+		# The run is over: the next thing to do is start another.
+		_campaign_label = "New run"
+		_campaign_button.text = _campaign_label
+		_default_focus = _campaign_button
+		if _campaign_button.is_visible_in_tree():
+			_campaign_button.grab_focus()
 
 
 func set_continue_available(available: bool) -> void:
@@ -312,7 +335,7 @@ func _on_campaign_pressed() -> void:
 
 func _disarm_campaign() -> void:
 	_new_campaign_armed = false
-	_campaign_button.text = "New campaign"
+	_campaign_button.text = _campaign_label
 
 
 func layout(vp: Vector2) -> void:
@@ -349,7 +372,7 @@ func _disarm_quit() -> void:
 
 ## Keeps the focus on the panel while it is shown; the primary button is the default.
 func _process(_delta: float) -> void:
-	UiFocus.keep_inside(self, _fight_button)
+	UiFocus.keep_inside(self, _default_focus if _default_focus != null else _fight_button)
 
 
 func _label(font_size: int) -> Label:
