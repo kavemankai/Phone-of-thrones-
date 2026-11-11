@@ -176,7 +176,12 @@ func is_dead() -> bool:
 
 
 func is_invulnerable() -> bool:
-	return immune_time > 0.0 or (state == State.DODGE and state_time < tuning.dodge_iframes)
+	return immune_time > 0.0 or (state == State.DODGE and state_time < roll_iframes())
+
+
+## How long a roll is invulnerable.
+func roll_iframes() -> float:
+	return tuning.dodge_iframes + (Boon.AFTERIMAGE_BONUS if boons.has(Boon.AFTERIMAGE) else 0.0)
 
 
 func charge_progress() -> float:
@@ -342,6 +347,8 @@ func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult
 
 func _absorb(damage: float, atk: AttackDef) -> void:
 	var stamina_rate := tuning.stamina_block_shield if has_shield else tuning.stamina_block_bare
+	if boons.has(Boon.BULWARK):
+		stamina_rate *= Boon.BULWARK_COST_MULT
 	_spend_stamina(damage * stamina_rate * atk.guard_cost_mult)
 	var chip := damage * (1.0 - guard_reduction())
 	if chip > 0.0:
@@ -397,6 +404,8 @@ func _regen_guard(dt: float) -> void:
 func take_hit(damage: float) -> bool:
 	if state == State.DEAD or is_invulnerable():
 		return false
+	if boons.has(Boon.STONEFOOT):
+		damage *= Boon.STONEFOOT_DAMAGE_MULT
 	hp = maxf(0.0, hp - damage)
 	immune_time = tuning.hit_immunity
 	flash = 0.15
@@ -462,8 +471,11 @@ func _apply_boons_to_attack(heavy: bool, slipstream: bool) -> void:
 		cur_attack.windup *= Boon.SLIPSTREAM_WINDUP_MULT
 	if riposte_left > 0.0:
 		riposte_left = 0.0
-		cur_attack.damage *= Boon.RIPOSTE_DAMAGE_MULT
+		cur_attack.damage += minf(cur_attack.damage * (Boon.RIPOSTE_DAMAGE_MULT - 1.0),
+				Boon.RIPOSTE_MAX_BONUS)
 		_show_cue("RIPOSTE", Color(1.0, 0.85, 0.22))
+	if not heavy and boons.has(Boon.LONG_REACH):
+		cur_attack.reach *= Boon.LONG_REACH_MULT
 	if heavy and boons.has(Boon.HEAVY_HAND):
 		cur_attack.reach *= Boon.HEAVY_HAND_REACH_MULT
 		cur_attack.knockback += Boon.HEAVY_HAND_KNOCKBACK
@@ -503,9 +515,14 @@ func _apply_hits() -> void:
 		if HitShapes.circle_in_sector(position, facing, cur_attack.reach, cur_attack.arc,
 				e.position, e.radius):
 			hit_ids[id] = true
-			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
+			var damage: float = cur_attack.damage
+			if e.is_staggered() and boons.has(Boon.EXECUTIONER):
+				damage *= Boon.EXECUTIONER_MULT
+			e.take_hit(damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
 			if e.is_dead() and boons.has(Boon.BLOOD_PRICE):
 				hp = minf(tuning.hero_max_hp, hp + Boon.BLOOD_PRICE_HEAL)
+			if e.is_dead() and boons.has(Boon.MOMENTUM):
+				dodge_charges = mini(max_charges(), dodge_charges + 1)
 			hit_landed.emit(e, cur_attack.heavy)
 
 
@@ -585,7 +602,7 @@ func _process(delta: float) -> void:
 	parry_flash = maxf(0.0, parry_flash - delta)
 	block_flash = maxf(0.0, block_flash - delta)
 	z_index = int(position.x + position.y)  # isometric depth order: nearer is lower on screen
-	if state == State.DODGE and state_time < (tuning.dodge_iframes if tuning else 0.0):
+	if state == State.DODGE and state_time < (roll_iframes() if tuning else 0.0):
 		modulate.a = 0.4
 	elif immune_time > 0.0 and state != State.DEAD:
 		modulate.a = 0.55 if int(immune_time * 24.0) % 2 == 0 else 1.0
