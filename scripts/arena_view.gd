@@ -33,6 +33,14 @@ var cover: Array[Rect2] = []
 ## Floor strips that burst on a timer (see WardData). Game sets vent_time every frame.
 var vents: Array[Rect2] = []
 var vent_time := 0.0
+## Combined map: when tiles is not empty the view draws one floor per tile ({rect, style,
+## tint}) with walls and gates between them, instead of a single room.
+var tiles: Array[Dictionary] = []
+var walls: Array[Rect2] = []
+var locked_gates: Array[Rect2] = []
+var open_gates: Array[Rect2] = []
+## Prop art for each entry of `cover` on a combined map (a room style per footprint).
+var cover_styles: Array[int] = []
 
 
 func door_position(index: int) -> Vector2:
@@ -44,6 +52,9 @@ func _ready() -> void:
 
 
 func _draw() -> void:
+	if not tiles.is_empty():
+		_draw_map()
+		return
 	var floor_rect := Rect2(Vector2.ZERO, arena_size)
 	var floor_index := room_style if room_style >= 0 and room_style < FLOORS.size() - 1 else FLOORS.size() - 1
 	draw_rect(Rect2(Vector2(10, 15), arena_size).grow(7.0), Color(0, 0, 0, 0.65))
@@ -56,7 +67,7 @@ func _draw() -> void:
 		_draw_vent(vents[i], WardData.vent_state(i, vent_time),
 				WardData.vent_warning_progress(i, vent_time))
 	for footprint in cover:
-		_draw_cover(footprint)
+		_draw_cover(footprint, room_style)
 	if room_style in [0, 1, 3, 4]:
 		_draw_brazier(Vector2(39.0, 44.0))
 		_draw_brazier(Vector2(arena_size.x - 31.0, 29.0))
@@ -92,15 +103,55 @@ func _draw_vent(strip: Rect2, phase: WardData.Vent, warning: float) -> void:
 			draw_rect(strip, Color(1.0, 0.25, 0.1), false, 4.0)
 
 
-func _draw_cover(footprint: Rect2) -> void:
+## All the rooms on one floor plan. Walls and gates are drawn from the same rectangles that
+## block movement and attacks.
+func _draw_map() -> void:
+	draw_rect(Rect2(Vector2.ZERO, arena_size).grow(8.0), Color(0.05, 0.045, 0.04))
+	for tile in tiles:
+		var area: Rect2 = tile["rect"]
+		var style: int = tile["style"]
+		var ground: Color = tile["tint"]
+		var index := style if style >= 0 and style < FLOORS.size() - 1 else FLOORS.size() - 1
+		draw_texture_rect(FLOORS[index], area, false, Color.WHITE.lerp(ground.lightened(0.5), 0.32))
+		draw_rect(area, Color(0.55, 0.47, 0.36, 0.5), false, 2.0)
+	for i in vents.size():
+		_draw_vent(vents[i], WardData.vent_state(i, vent_time),
+				WardData.vent_warning_progress(i, vent_time))
+	for gate in open_gates:
+		draw_rect(gate, Color(0.35, 0.75, 0.4, 0.22))
+		draw_rect(gate, Color(0.45, 0.9, 0.5, 0.7), false, 2.0)
+	for wall in walls:
+		_draw_block(wall, 26.0, Color(0.30, 0.28, 0.26))
+	for gate in locked_gates:
+		_draw_block(gate, 20.0, Color(0.48, 0.16, 0.12))
+	for i in cover.size():
+		_draw_cover(cover[i], cover_styles[i] if i < cover_styles.size() else 0)
+
+
+## A plain block standing on a ground rectangle. "Up" on screen is ground (-1, -1), so the
+## top face is the base moved that way and the two faces toward the camera join them.
+func _draw_block(base: Rect2, height: float, tint: Color) -> void:
+	var lift := Vector2(-height, -height)
+	var a := base.position
+	var b := Vector2(base.end.x, base.position.y)
+	var c := base.end
+	var d := Vector2(base.position.x, base.end.y)
+	draw_colored_polygon(PackedVector2Array([b, c, c + lift, b + lift]), tint.darkened(0.35))
+	draw_colored_polygon(PackedVector2Array([d, c, c + lift, d + lift]), tint.darkened(0.2))
+	draw_colored_polygon(PackedVector2Array([a + lift, b + lift, c + lift, d + lift]), tint)
+	draw_polyline(PackedVector2Array([a + lift, b + lift, c + lift, d + lift, a + lift]),
+			tint.lightened(0.25), 1.5)
+
+
+func _draw_cover(footprint: Rect2, style: int) -> void:
 	draw_rect(footprint, Color(0.10, 0.08, 0.07, 0.84))
 	draw_rect(footprint, Color(room_light, 0.70), false, 2.0)
-	var texture: Texture2D = COVER_ART.get(room_style, COVER_ART[0])
+	var texture: Texture2D = COVER_ART.get(style, COVER_ART[0])
 	# On screen the footprint is a diamond (x + y) wide and half that tall, centred on the
 	# footprint's centre. The prop keeps its painted proportions, is as wide as that diamond
 	# and stands with its base on the diamond's front corner, so the art covers the area
 	# that blocks movement. The anvil is drawn a little narrower than its block.
-	var fill := 0.85 if room_style == 3 else 1.0
+	var fill := 0.85 if style == 3 else 1.0
 	var width := (footprint.size.x + footprint.size.y) * fill
 	var height := width * float(texture.get_height()) / float(texture.get_width())
 	# The props are painted running down to the right; mirror them for cover that is

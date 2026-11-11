@@ -27,6 +27,10 @@ var has_shield := false
 var input: CombatInput
 var arena_size := Vector2(340, 380)
 var arena_cover: Array[Rect2] = []
+## Cover that enemies route around. Normally the same as arena_cover; a large map narrows it
+## to the props of the room being fought in, so long walls are not searched every step.
+var nav_cover: Array[Rect2] = []
+var nav_override := false
 
 var state: State = State.IDLE
 var state_time := 0.0
@@ -169,6 +173,10 @@ func reset(pos: Vector2) -> void:
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
+
+
+func nav() -> Array[Rect2]:
+	return nav_cover if nav_override else arena_cover
 
 
 func is_dead() -> bool:
