@@ -105,6 +105,8 @@ func _draw_campaign_desktop() -> void:
 		var foes := CampaignRun.foe_summary(choice.foes)
 		for wave: Array in choice.get("waves", []):
 			foes.append("then " + ", ".join(CampaignRun.foe_summary(wave)))
+		if not choice.get("vents", []).is_empty():
+			foes.append("floor vents")
 		line += 24.0
 		draw_string(font, Vector2(left, line), " + ".join(foes.slice(0, 2)),
 				HORIZONTAL_ALIGNMENT_CENTER, card.x, 16, ink)

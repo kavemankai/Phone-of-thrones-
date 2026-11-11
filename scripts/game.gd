@@ -62,6 +62,9 @@ var _clear_delay := 0.0
 var _waves_left: Array = []
 ## Seconds left to show the "reinforcements" banner.
 var wave_notice := 0.0
+## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
+var _vents: Array[Rect2] = []
+var _vent_burned: Dictionary = {}
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -265,6 +268,10 @@ func _prepare_room(room_size: Vector2) -> void:
 	paused = false
 	_waves_left = []
 	wave_notice = 0.0
+	_vents.clear()
+	_vent_burned.clear()
+	arena_view.vents.clear()
+	arena_view.vent_time = 0.0
 	fx.clear()
 	tuning.arena_size = room_size
 	hero.arena_size = room_size
@@ -396,6 +403,8 @@ func _start_campaign_room() -> void:
 	arena_view.room_light = room.light
 	hero.arena_cover.assign(room.get("cover", []))
 	arena_view.cover.assign(hero.arena_cover)
+	_vents.assign(room.get("vents", []))
+	arena_view.vents.assign(_vents)
 	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
 	_waves_left = room.get("waves", []).duplicate()
 	wave_notice = 0.0
@@ -499,6 +508,7 @@ func _sim_step(dt: float) -> void:
 		e.step(dt)
 	hero.step(dt, enemies)
 	_resolve_overlaps(dt)
+	_step_vents()
 	input.end_step()
 	if intermission_active:
 		intermission_left -= dt
@@ -506,6 +516,29 @@ func _sim_step(dt: float) -> void:
 			intermission_active = false
 			_spawn_captain()
 	_check_outcome()
+
+
+## A bursting vent burns whoever stands in its strip, once per burst. A hit the hero's roll
+## or hit immunity refuses is tried again next step, like an enemy strike.
+func _step_vents() -> void:
+	for i in _vents.size():
+		if WardData.vent_state(i, fight_time) != WardData.Vent.BURSTING:
+			continue
+		var cycle := WardData.vent_cycle(i, fight_time)
+		var strip := _vents[i]
+		var hero_key := "%d:hero" % i
+		if not hero.is_dead() and strip.has_point(hero.position) \
+				and _vent_burned.get(hero_key, -1) != cycle:
+			if hero.take_hit(WardData.VENT_DAMAGE):
+				_vent_burned[hero_key] = cycle
+		for e: Enemy in enemies:
+			if e.is_dead() or not strip.has_point(e.position):
+				continue
+			var key := "%d:%d" % [i, e.get_instance_id()]
+			if _vent_burned.get(key, -1) != cycle:
+				_vent_burned[key] = cycle
+				# From behind, so a Warden's front shield does not stop fire from the floor.
+				e.take_hit(WardData.VENT_ENEMY_DAMAGE, e.position - e.facing * 10.0, 0.0)
 
 
 ## A living Herald speeds up the other living enemies inside its ring.
@@ -589,6 +622,9 @@ func _process(delta: float) -> void:
 			if paused:
 				return
 			wave_notice = maxf(0.0, wave_notice - delta)
+			if not _vents.is_empty():
+				arena_view.vent_time = fight_time
+				arena_view.queue_redraw()
 			_poll_devices()
 			# Hit-stop: hold the fight for a few frames after an impact. Input is still read,
 			# and its press flags wait in CombatInput for the next step, so nothing is lost.
