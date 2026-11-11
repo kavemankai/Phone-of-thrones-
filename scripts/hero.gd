@@ -670,7 +670,9 @@ func _draw() -> void:
 			if input.move_vector().length_squared() > 0.05:
 				pose = ForgeArt.HERO_RUN
 				stride = absf(sin(Time.get_ticks_msec() * 0.016)) * 3.0
-	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride))
+	# Struck: rock back for as long as the hit flash lasts.
+	var flinch := -0.18 * heading_screen.x * clampf(flash / 0.15, 0.0, 1.0) if state == State.HURT else 0.0
+	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride), flinch)
 	if has_shield and shield_in_front:
 		_draw_shield(shield_pos, state == State.BLOCK)
 	if state == State.GUARD_BREAK:

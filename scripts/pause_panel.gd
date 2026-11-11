@@ -15,6 +15,8 @@ var _legend: Label
 var _pickups: Label
 var _resume: Button
 var _fullscreen: Button
+var _shake: Button
+var _volume: Button
 var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 var _hold_for_heavy := false
 
@@ -32,7 +34,7 @@ func _ready() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
+	box.add_theme_constant_override("separation", 8)
 	center.add_child(box)
 
 	_title = _label(48)
@@ -49,6 +51,14 @@ func _ready() -> void:
 	_button("Controls", box).pressed.connect(func(): controls_requested.emit())
 	_fullscreen = _button("", box)
 	_fullscreen.pressed.connect(toggle_fullscreen)
+	_shake = _button("", box)
+	_shake.pressed.connect(func():
+		GameSettings.toggle_shake()
+		_refresh())
+	_volume = _button("", box)
+	_volume.pressed.connect(func():
+		GameSettings.cycle_volume()
+		_refresh())
 	_button("Quit to desktop", box).pressed.connect(func(): quit_requested.emit())
 
 	_legend = _label(18)
@@ -120,6 +130,8 @@ func _refresh() -> void:
 	_legend.text = "%s      %s: resume\n%s" % [InputPrompts.menu_hint(_style),
 			InputPrompts.back(_style), InputPrompts.combat_line(_style, _hold_for_heavy)]
 	_fullscreen.text = "Fullscreen: ON" if _is_fullscreen() else "Fullscreen: OFF"
+	_shake.text = GameSettings.shake_label()
+	_volume.text = GameSettings.volume_label()
 
 
 func _is_fullscreen() -> bool:
@@ -143,8 +155,8 @@ func _label(font_size: int) -> Label:
 func _button(text: String, parent: Container) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(340, 58)
-	b.add_theme_font_size_override("font_size", 26)
+	b.custom_minimum_size = Vector2(340, 44)
+	b.add_theme_font_size_override("font_size", 22)
 	UiFocus.style(b)
 	var wrap := CenterContainer.new()
 	wrap.add_child(b)
