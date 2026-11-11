@@ -12,10 +12,18 @@ const HEAVY_HAND := "heavy_hand"
 const BLOOD_PRICE := "blood_price"
 const SLIPSTREAM := "slipstream"
 const IRON_LUNGS := "iron_lungs"
+const EXECUTIONER := "executioner"
+const BULWARK := "bulwark"
+const MOMENTUM := "momentum"
+const LONG_REACH := "long_reach"
+const STONEFOOT := "stonefoot"
+const AFTERIMAGE := "afterimage"
 
 ## Numbers the effects use, kept beside the text that describes them.
 const RIPOSTE_WINDOW := 2.5
 const RIPOSTE_DAMAGE_MULT := 2.0
+## The most damage a Riposte may add, so a doubled heavy cannot one-shot a tough enemy.
+const RIPOSTE_MAX_BONUS := 16.0
 const SECOND_WIND_STAMINA := 30.0
 const PATIENT_GUARD_BONUS := 0.08
 const HEAVY_HAND_REACH_MULT := 1.15
@@ -24,11 +32,16 @@ const BLOOD_PRICE_HEAL := 5.0
 const SLIPSTREAM_WINDOW := 0.8
 const SLIPSTREAM_WINDUP_MULT := 0.6
 const IRON_LUNGS_DELAY_MULT := 0.5
+const EXECUTIONER_MULT := 1.5
+const BULWARK_COST_MULT := 0.67
+const LONG_REACH_MULT := 1.15
+const STONEFOOT_DAMAGE_MULT := 0.8
+const AFTERIMAGE_BONUS := 0.06
 
 ## Offer order is the order here, so a saved run reads the same doors after an update only
 ## if new entries are added at the end.
 const ALL := {
-	RIPOSTE: {"name": "Riposte", "text": "After a parry, your next attack hits twice as hard."},
+	RIPOSTE: {"name": "Riposte", "text": "After a parry, your next attack hits far harder."},
 	SECOND_WIND: {"name": "Second Wind", "text": "A parry gives back 30 stamina."},
 	THIRD_STEP: {"name": "Third Step", "text": "One more roll charge."},
 	PATIENT_GUARD: {"name": "Patient Guard", "text": "The parry window lasts 0.08 s longer."},
@@ -36,6 +49,12 @@ const ALL := {
 	BLOOD_PRICE: {"name": "Blood Price", "text": "Each kill heals 5 health."},
 	SLIPSTREAM: {"name": "Slipstream", "text": "After a roll, your next attack is free and faster."},
 	IRON_LUNGS: {"name": "Iron Lungs", "text": "Stamina starts returning twice as soon."},
+	EXECUTIONER: {"name": "Executioner", "text": "Hits on staggered enemies deal half again as much."},
+	BULWARK: {"name": "Bulwark", "text": "Blocking costs a third less stamina."},
+	MOMENTUM: {"name": "Momentum", "text": "Each kill gives back one roll charge."},
+	LONG_REACH: {"name": "Long Reach", "text": "Light attacks reach further."},
+	STONEFOOT: {"name": "Stonefoot", "text": "Hits that land on you hurt a fifth less."},
+	AFTERIMAGE: {"name": "Afterimage", "text": "A roll protects you a little longer."},
 }
 
 

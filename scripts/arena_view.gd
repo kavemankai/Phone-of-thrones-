@@ -30,6 +30,9 @@ var doors_open := false
 var has_doors := false
 var near_door := -1
 var cover: Array[Rect2] = []
+## Floor strips that burst on a timer (see WardData). Game sets vent_time every frame.
+var vents: Array[Rect2] = []
+var vent_time := 0.0
 
 
 func door_position(index: int) -> Vector2:
@@ -49,6 +52,9 @@ func _draw() -> void:
 	draw_texture_rect(FLOORS[floor_index], floor_rect, false, tint)
 	draw_rect(floor_rect, room_light.darkened(0.28), false, 3.0)
 	draw_rect(floor_rect.grow(-5.0), Color(room_light, 0.35), false, 1.0)
+	for i in vents.size():
+		_draw_vent(vents[i], WardData.vent_state(i, vent_time),
+				WardData.vent_warning_progress(i, vent_time))
 	for footprint in cover:
 		_draw_cover(footprint)
 	if room_style in [0, 1, 3, 4]:
@@ -70,6 +76,20 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(-10.0, -11.0), str(i + 1),
 				HORIZONTAL_ALIGNMENT_CENTER, 20.0, 16, Color(1.0, 0.92, 0.72))
 		draw_set_transform(Vector2.ZERO)
+
+
+## The strip drawn here is exactly the area that burns: a grate while quiet, a brightening
+## warning, then solid fire for the burst.
+func _draw_vent(strip: Rect2, phase: WardData.Vent, warning: float) -> void:
+	draw_rect(strip, Color(0.03, 0.02, 0.02, 0.55))
+	draw_rect(strip, Color(0.45, 0.22, 0.10, 0.55), false, 1.5)
+	match phase:
+		WardData.Vent.WARNING:
+			draw_rect(strip, Color(1.0, 0.55, 0.15, 0.12 + 0.38 * warning))
+			draw_rect(strip, Color(1.0, 0.7, 0.3, 0.5 + 0.5 * warning), false, 2.0 + 2.0 * warning)
+		WardData.Vent.BURSTING:
+			draw_rect(strip, Color(1.0, 0.93, 0.8, 0.9))
+			draw_rect(strip, Color(1.0, 0.25, 0.1), false, 4.0)
 
 
 func _draw_cover(footprint: Rect2) -> void:

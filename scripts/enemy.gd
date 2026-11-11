@@ -11,6 +11,7 @@ enum State { APPROACH, POSITION, WINDUP, ACTIVE, RECOVER, DEAD, STAGGER }
 signal damaged(knocked_back: bool)
 signal struck
 signal died
+signal phase_changed
 
 ## How long an enemy reels when it enters its second phase.
 const PHASE_REEL_TIME := 1.2
@@ -198,6 +199,7 @@ func _enter_second_phase() -> bool:
 	profile = second
 	pattern_pos = 0
 	stagger(PHASE_REEL_TIME, false, 1.0)
+	phase_changed.emit()
 	return true
 
 
@@ -410,6 +412,9 @@ func _draw() -> void:
 		lean = -0.16 * screen_facing.x * clampf(state_time / cur.windup, 0.0, 1.0)
 	elif state == State.ACTIVE:
 		lean = 0.23 * screen_facing.x
+	if flash > 0.0:
+		# Struck: rock back, away from where it is facing.
+		lean -= 0.20 * screen_facing.x * clampf(flash / 0.12, 0.0, 1.0)
 	var stride := absf(sin(Time.get_ticks_msec() * 0.014 + position.x)) * 2.5 if state == State.APPROACH else 0.0
 	ForgeArt.actor(self, texture, height, screen_facing, tint, Vector2(0.0, -stride), lean)
 	if state == State.STAGGER:

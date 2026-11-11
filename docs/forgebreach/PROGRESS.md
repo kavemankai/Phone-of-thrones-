@@ -17,6 +17,15 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 The existing project still runs as Shieldwall Combat Test; no new gameplay is claimed by these administrative commits. The displayed title FORGEBREACH is provisional.
 
 ### Activity log
+- Batch A: game feel, more pickups, forge vents, options (QA pending; not parsed, run or built by the gameplay agent; built without a capture of PR #26, so none of it has been seen).
+  - Impact feedback (`scripts/combat_fx.gd`): hit-stop of 0.045 s on a light hit, 0.09 s heavy, 0.12 s parry, 0.06 s when the hero is hurt, 0.15 s at the boss's phase change; screen shake on heavy hits, hero damage, guard break and phase change; sparks on hits and blocks, a gold ring on parry, a ring on kills. `Game._process` skips simulation steps while the freeze lasts; `Game.step()` is unchanged. Struck sprites rock back while their hit flash lasts.
+  - Options on the pause menu: screen shake on/off and master volume in five steps, saved to `user://settings.cfg` (`scripts/game_settings.gd`). Pause buttons are smaller to fit eight of them.
+  - Pickups: Executioner (+50% to staggered enemies), Bulwark (blocking costs a third less stamina), Momentum (a kill returns a roll charge), Long Reach (light reach +15%), Stonefoot (hits on the hero -20%), Afterimage (+0.06 s roll invulnerability). Fourteen in all. Riposte now adds at most 16 damage.
+  - Forge vents: every Cinder Forge room has two floor strips (`WardData._FORGE_VENTS`) that warn for 1.4 s and burst for 0.8 s on a 5 s cycle, the second 2.5 s behind the first, starting 2 s into the fight. A body whose centre is inside the drawn strip takes 10 (hero) or 8 (enemy) once per burst. Door cards list "floor vents".
+  - The ending shows the run seed.
+  - First-guess numbers: every hit-stop and shake value, all six pickups, vent timing and damage.
+  - QA checks worth adding: a button press during a freeze still acts on the first step after it; `Game.step()` results are unchanged with effects firing; `WardData.vent_state` over one cycle; a vent burns a body once per burst and only inside its rectangle, and a hero roll through it is refused then retried; `WardData.validate` still passes; each new pickup's effect; Riposte bonus never exceeds 16; settings survive a reload and a missing file gives defaults.
+  - Human gate: one capture or play session covers this batch and PR #26 together.
 - Presentation fixes from the Ward I simulated-run capture (QA pending; not parsed, run or built by the gameplay agent). Source: a 45 s scripted run on the art build, reviewed frame by frame; audio not assessed.
   - Arena is about 30% larger on PC: the status strip is a fixed 96 px (`Game.DESKTOP_BAR_HEIGHT`) instead of 28% of the height, and the room header moved to the top-left corner. The phone layout is unchanged.
   - Door choice is two opaque cards in the bottom corners above the strip, one per door; nothing is drawn over the health bars or legend any more. Cards also list second waves.

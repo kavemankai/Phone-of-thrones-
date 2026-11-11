@@ -62,6 +62,9 @@ var _clear_delay := 0.0
 var _waves_left: Array = []
 ## Seconds left to show the "reinforcements" banner.
 var wave_notice := 0.0
+## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
+var _vents: Array[Rect2] = []
+var _vent_burned: Dictionary = {}
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -85,10 +88,14 @@ var bindings_panel: BindingsPanel
 var _bindings_return_panel: Control
 var _bindings_return_focus: Control
 var sfx: Sfx
+var fx: CombatFx
+## Where the arena sits before any screen shake is added.
+var _arena_origin := Vector2.ZERO
 
 
 func _ready() -> void:
 	InputActions.ensure()
+	GameSettings.ensure_loaded()
 	touch_ui = OS.has_feature("mobile")
 	# A private copy, so changing values at runtime (tests) never edits the shared resource.
 	var loaded := load(TUNING_PATH) as Tuning
@@ -128,19 +135,28 @@ func _ready() -> void:
 	hero = HERO_SCENE.instantiate() as Hero
 	hero.setup(tuning, input, tuning.arena_size)
 	iso_layer.add_child(hero)
+	fx = CombatFx.new()
+	iso_layer.add_child(fx)
 	hero.swung.connect(func(heavy: bool): sfx.play("swing_heavy" if heavy else "swing_light"))
-	hero.hit_landed.connect(func(_e: Enemy, _h: bool): sfx.play("hit"))
+	hero.hit_landed.connect(func(e: Enemy, heavy: bool):
+		sfx.play("hit")
+		_fx_hit_landed(e, heavy))
 	hero.dodged.connect(func(): sfx.play("dodge"))
 	hero.damaged.connect(func():
 		sfx.play("hurt")
-		_count_hit())
+		_count_hit()
+		_fx_hero_hurt())
 	hero.died.connect(func():
 		sfx.play("hurt")
-		_count_hit())
+		_count_hit()
+		_fx_hero_hurt())
 	hero.blocked.connect(func(parried: bool):
 		sfx.play("parry" if parried else "block")
-		_count_parry(parried))
-	hero.guard_broken.connect(func(): sfx.play("guard_break"))
+		_count_parry(parried)
+		_fx_blocked(parried))
+	hero.guard_broken.connect(func():
+		sfx.play("guard_break")
+		fx.shake(6.0, 0.25))
 
 	var ui := CanvasLayer.new()
 	ui.name = "UI"
@@ -252,6 +268,11 @@ func _prepare_room(room_size: Vector2) -> void:
 	paused = false
 	_waves_left = []
 	wave_notice = 0.0
+	_vents.clear()
+	_vent_burned.clear()
+	arena_view.vents.clear()
+	arena_view.vent_time = 0.0
+	fx.clear()
 	tuning.arena_size = room_size
 	hero.arena_size = room_size
 	hero.arena_cover.clear()
@@ -299,6 +320,33 @@ func _begin_room() -> void:
 	menu.set_directional_guard(directional_guard)
 	_apply_prompt_style()
 	_set_state(State.FIGHTING)
+
+
+## Impact feedback. Each of these only asks CombatFx for a freeze, a shake or a mark; the
+## simulation has already resolved the hit.
+func _fx_hit_landed(e: Enemy, heavy: bool) -> void:
+	fx.spark(e.position, Color(1.0, 0.86, 0.55) if heavy else Color(1, 1, 1), 30.0 if heavy else 20.0)
+	fx.hit_stop(0.09 if heavy else 0.045)
+	if heavy:
+		fx.shake(3.5, 0.16)
+	if e.is_dead():
+		fx.ring(e.position, Color(1.0, 0.55, 0.35), 46.0, 0.30)
+
+
+func _fx_hero_hurt() -> void:
+	fx.spark(hero.position, Color(1.0, 0.35, 0.28), 26.0)
+	fx.hit_stop(0.06)
+	fx.shake(5.0, 0.20)
+
+
+func _fx_blocked(parried: bool) -> void:
+	if parried:
+		fx.ring(hero.position, Color(1.0, 0.85, 0.3), 70.0, 0.36)
+		fx.spark(hero.position, Color(1.0, 0.92, 0.6), 30.0, 0.26)
+		fx.hit_stop(0.12)
+	else:
+		fx.spark(hero.position, Color(0.65, 0.85, 1.0), 16.0, 0.16)
+		fx.hit_stop(0.03)
 
 
 func _count_hit() -> void:
@@ -355,6 +403,8 @@ func _start_campaign_room() -> void:
 	arena_view.room_light = room.light
 	hero.arena_cover.assign(room.get("cover", []))
 	arena_view.cover.assign(hero.arena_cover)
+	_vents.assign(room.get("vents", []))
+	arena_view.vents.assign(_vents)
 	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
 	_waves_left = room.get("waves", []).duplicate()
 	wave_notice = 0.0
@@ -405,6 +455,10 @@ func _add_enemy(pos: Vector2, idx: int, profile: EnemyProfile) -> Enemy:
 	e.setup(tuning, controller, hero, tuning.arena_size, idx, profile)
 	e.position = pos
 	e.struck.connect(func(): sfx.play("enemy_strike"))
+	e.phase_changed.connect(func():
+		fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
+		fx.hit_stop(0.15)
+		fx.shake(8.0, 0.4))
 	iso_layer.add_child(e)
 	enemies.append(e)
 	return e
@@ -454,6 +508,7 @@ func _sim_step(dt: float) -> void:
 		e.step(dt)
 	hero.step(dt, enemies)
 	_resolve_overlaps(dt)
+	_step_vents()
 	input.end_step()
 	if intermission_active:
 		intermission_left -= dt
@@ -461,6 +516,29 @@ func _sim_step(dt: float) -> void:
 			intermission_active = false
 			_spawn_captain()
 	_check_outcome()
+
+
+## A bursting vent burns whoever stands in its strip, once per burst. A hit the hero's roll
+## or hit immunity refuses is tried again next step, like an enemy strike.
+func _step_vents() -> void:
+	for i in _vents.size():
+		if WardData.vent_state(i, fight_time) != WardData.Vent.BURSTING:
+			continue
+		var cycle := WardData.vent_cycle(i, fight_time)
+		var strip := _vents[i]
+		var hero_key := "%d:hero" % i
+		if not hero.is_dead() and strip.has_point(hero.position) \
+				and _vent_burned.get(hero_key, -1) != cycle:
+			if hero.take_hit(WardData.VENT_DAMAGE):
+				_vent_burned[hero_key] = cycle
+		for e: Enemy in enemies:
+			if e.is_dead() or not strip.has_point(e.position):
+				continue
+			var key := "%d:%d" % [i, e.get_instance_id()]
+			if _vent_burned.get(key, -1) != cycle:
+				_vent_burned[key] = cycle
+				# From behind, so a Warden's front shield does not stop fire from the floor.
+				e.take_hit(WardData.VENT_ENEMY_DAMAGE, e.position - e.facing * 10.0, 0.0)
 
 
 ## A living Herald speeds up the other living enemies inside its ring.
@@ -535,12 +613,23 @@ func _set_state(s: State) -> void:
 
 
 func _process(delta: float) -> void:
+	if not paused:
+		fx.advance(delta)
+	fx.shake_enabled = GameSettings.screen_shake
+	arena_root.position = _arena_origin + fx.shake_offset()
 	match state:
 		State.FIGHTING:
 			if paused:
 				return
 			wave_notice = maxf(0.0, wave_notice - delta)
+			if not _vents.is_empty():
+				arena_view.vent_time = fight_time
+				arena_view.queue_redraw()
 			_poll_devices()
+			# Hit-stop: hold the fight for a few frames after an impact. Input is still read,
+			# and its press flags wait in CombatInput for the next step, so nothing is lost.
+			if fx.frozen():
+				return
 			step(delta)
 		State.ROOM_CLEAR:
 			if paused:
@@ -571,8 +660,8 @@ func _process(delta: float) -> void:
 func _show_campaign_result() -> void:
 	var won := outcome == Outcome.VICTORY
 	var seconds := int(campaign.time)
-	var totals := "Time %d:%02d      Hits taken %d      Parries %d" % [
-		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries]
+	var totals := "Time %d:%02d      Hits taken %d      Parries %d      Seed %d" % [
+		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries, campaign.run_seed]
 	var carried := Boon.titles(campaign.boons)
 	var pickups := "Pickups: " + (", ".join(carried) if not carried.is_empty() else "none")
 	if won:
@@ -893,7 +982,8 @@ func _apply_layout() -> void:
 	var s := minf(free.size.x / extent.x, free.size.y / extent.y)
 	arena_root.scale = Vector2(s, s)
 	var local_center := Vector2((a.x - a.y) * 0.5, (a.x + a.y) * 0.25)
-	arena_root.position = free.get_center() - local_center * s
+	_arena_origin = free.get_center() - local_center * s
+	arena_root.position = _arena_origin
 	hud.layout(vp, insets, band_h)
 	controls.layout(vp, band_h, insets)
 	menu.layout(vp)
