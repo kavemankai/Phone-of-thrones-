@@ -29,6 +29,11 @@ const WEAPON_PATHS := [
 ]
 const CAPTAIN_PATH := "res://resources/captain.tres"
 const DOOR_REACH := 49.0
+## The combined test map: one variant of each Ward I stage ([stage, variant] in
+## WardData.OUTER_WALLS), stacked in a column with a wall and a gate between neighbours.
+const MAP_ROOMS := [[0, 0], [1, 1], [2, 1], [3, 0], [4, 0]]
+const MAP_WALL := 18.0
+const MAP_GATE_WIDTH := 84.0
 
 signal state_changed(new_state: State)
 
@@ -65,6 +70,22 @@ var wave_notice := 0.0
 ## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
 var _vents: Array[Rect2] = []
 var _vent_burned: Dictionary = {}
+## Combined test map state. Room 0 is where the hero starts; gate k stands between room k
+## and room k + 1 and opens when every enemy of room k is dead.
+var map_active := false
+var map_label := ""
+var _map_rooms: Array[Rect2] = []
+var _map_names: Array[String] = []
+var _map_walls: Array[Rect2] = []
+var _map_gates: Array[Rect2] = []
+var _map_gate_open: Array[bool] = []
+var _map_props: Array = []
+var _map_prop_styles: Array = []
+## The furthest room the hero has reached. Enemies of later rooms wait until then.
+var _map_room := 0
+var _view_size := Vector2(400, 400)
+var _view_centre := Vector2.ZERO
+var _view_scale := 1.0
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -172,9 +193,13 @@ func _ready() -> void:
 	menu = MenuPanel.new()
 	ui.add_child(menu)
 	menu.set_weapons(weapons)
+	menu.map_requested.connect(func(w: int, sh: bool): start_map(w, sh))
 	menu.fight_requested.connect(func(m: int, w: int, sh: bool):
 		if campaign != null and state == State.RESULT and outcome == Outcome.DEFEAT:
 			_start_campaign_room()
+			return
+		if map_active and state == State.RESULT:
+			start_map(w, sh)
 			return
 		shield_on = sh
 		split_attacks = menu.split_attacks
@@ -270,6 +295,23 @@ func _prepare_room(room_size: Vector2) -> void:
 	wave_notice = 0.0
 	_vents.clear()
 	_vent_burned.clear()
+	map_active = false
+	map_label = ""
+	_map_rooms.clear()
+	_map_names.clear()
+	_map_walls.clear()
+	_map_gates.clear()
+	_map_gate_open.clear()
+	_map_props.clear()
+	_map_prop_styles.clear()
+	_map_room = 0
+	hero.nav_override = false
+	hero.nav_cover.clear()
+	arena_view.tiles.clear()
+	arena_view.walls.clear()
+	arena_view.locked_gates.clear()
+	arena_view.open_gates.clear()
+	arena_view.cover_styles.clear()
 	arena_view.vents.clear()
 	arena_view.vent_time = 0.0
 	fx.clear()
@@ -437,8 +479,161 @@ func _spawn_next_wave() -> void:
 	sfx.play("captain")
 
 
+## The combined test map: every Ward I room on one floor, hero at the bottom, the Gate
+## Captain at the top. No doors to choose and no pickups; each gate stays locked until the
+## room in front of it is cleared, then you walk through.
+func start_map(weapon_idx: int, shield: bool) -> void:
+	campaign = null
+	checkpoint_message = ""
+	shield_on = shield
+	split_attacks = menu.split_attacks
+	directional_guard = menu.directional_guard
+	if weapon_idx >= 0:
+		weapon_index = clampi(weapon_idx, 0, weapons.size() - 1)
+	var picks: Array[Dictionary] = []
+	var width := 0.0
+	var depth := MAP_WALL * (MAP_ROOMS.size() - 1)
+	for pick: Array in MAP_ROOMS:
+		var room: Dictionary = WardData.OUTER_WALLS[pick[0]][pick[1]]
+		picks.append(room)
+		var extent: Vector2 = room["size"]
+		width = maxf(width, extent.x)
+		depth += extent.y
+	var map_size := Vector2(width, depth)
+	if arena_view.room_style < 0:
+		_test_room_size = tuning.arena_size
+	_prepare_room(map_size)
+	map_active = true
+	_view_size = Vector2(width, 400.0)
+	arena_view.room_style = 0
+	arena_view.has_doors = false
+
+	var gate_left := (width - MAP_GATE_WIDTH) * 0.5
+	var gate_right := gate_left + MAP_GATE_WIDTH
+	var hero_start := Vector2.ZERO
+	var spawns: Array = []
+	var cursor := depth
+	for k in picks.size():
+		var room := picks[k]
+		var extent: Vector2 = room["size"]
+		var origin := Vector2((width - extent.x) * 0.5, cursor - extent.y)
+		var area := Rect2(origin, extent)
+		cursor = origin.y - MAP_WALL
+		_map_rooms.append(area)
+		_map_names.append(String(room["name"]))
+		arena_view.tiles.append({"rect": area, "style": int(room.get("style", k)), "tint": room["ground"]})
+		# A room narrower than the map is closed in at the sides.
+		if origin.x > 0.5:
+			_map_walls.append(Rect2(0.0, origin.y, origin.x, extent.y))
+			_map_walls.append(Rect2(area.end.x, origin.y, width - area.end.x, extent.y))
+		var props: Array[Rect2] = []
+		for footprint: Rect2 in room.get("cover", []):
+			props.append(Rect2(footprint.position + origin, footprint.size))
+		_map_props.append(props)
+		_map_prop_styles.append(int(room.get("style", 0)))
+		for strip: Rect2 in room.get("vents", []):
+			_vents.append(Rect2(strip.position + origin, strip.size))
+		if k < picks.size() - 1:
+			var wall_y := origin.y - MAP_WALL
+			_map_walls.append(Rect2(0.0, wall_y, gate_left, MAP_WALL))
+			_map_walls.append(Rect2(gate_right, wall_y, width - gate_right, MAP_WALL))
+			_map_gates.append(Rect2(gate_left, wall_y, MAP_GATE_WIDTH, MAP_WALL))
+			_map_gate_open.append(false)
+		# Spawn points use the room's own size, then move to where the room sits.
+		tuning.arena_size = extent
+		var spots := tuning.enemy_spawns()
+		if k == 0:
+			hero_start = origin + tuning.hero_spawn()
+		tuning.arena_size = map_size
+		var kinds: Array = room["foes"]
+		for i in mini(kinds.size(), spots.size()):
+			spawns.append([origin + spots[i], String(kinds[i]), k])
+
+	for entry: Array in spawns:
+		var kind: String = entry[1]
+		var room_index: int = entry[2]
+		var profile := CampaignRun.boss_profile(captain_profile) \
+				if kind == "gate_captain" and captain_profile != null \
+				else CampaignRun.enemy_profile(kind, tuning, room_index)
+		var e := _add_enemy(entry[0], enemies.size(), profile)
+		e.set_meta(&"map_room", room_index)
+	arena_view.vents.assign(_vents)
+	hero.position = hero_start
+	_map_room = 0
+	_refresh_map_cover()
+	_begin_room()
+
+
+## Rebuilds what blocks movement and attacks (walls, locked gates, every prop) and what
+## enemies route around (the props of the room being fought in).
+func _refresh_map_cover() -> void:
+	var solid: Array[Rect2] = []
+	var styles: Array[int] = []
+	var locked: Array[Rect2] = []
+	var opened: Array[Rect2] = []
+	solid.append_array(_map_walls)
+	for k in _map_gates.size():
+		if _map_gate_open[k]:
+			opened.append(_map_gates[k])
+		else:
+			locked.append(_map_gates[k])
+	solid.append_array(locked)
+	var props: Array[Rect2] = []
+	for k in _map_props.size():
+		for footprint: Rect2 in _map_props[k]:
+			props.append(footprint)
+			styles.append(int(_map_prop_styles[k]))
+	solid.append_array(props)
+	hero.arena_cover.assign(solid)
+	hero.nav_override = true
+	hero.nav_cover.assign(_map_props[_map_room])
+	arena_view.walls.assign(_map_walls)
+	arena_view.locked_gates.assign(locked)
+	arena_view.open_gates.assign(opened)
+	arena_view.cover.assign(props)
+	arena_view.cover_styles.assign(styles)
+	arena_view.queue_redraw()
+	map_label = "All rooms   %d / %d   %s" % [_map_room + 1, _map_rooms.size(), _map_names[_map_room]]
+
+
+## Once per simulation step on the combined map: note the furthest room the hero has
+## reached, and open the gate of any room whose enemies are all dead.
+func _step_map() -> void:
+	var changed := false
+	for k in range(_map_room + 1, _map_rooms.size()):
+		if _map_rooms[k].grow(MAP_WALL * 0.5).has_point(hero.position):
+			_map_room = k
+			changed = true
+	for k in _map_gates.size():
+		if _map_gate_open[k]:
+			continue
+		var cleared := true
+		for e: Enemy in enemies:
+			if int(e.get_meta(&"map_room", 0)) == k and not e.is_dead():
+				cleared = false
+				break
+		if cleared:
+			_map_gate_open[k] = true
+			changed = true
+			sfx.play("win")
+			fx.ring(_map_gates[k].get_center(), Color(0.5, 1.0, 0.55), 90.0, 0.6)
+	if changed:
+		_refresh_map_cover()
+
+
+## Where the arena must sit for the hero to be at the centre of the play area.
+func _camera_target() -> Vector2:
+	return _view_centre - Iso.to_screen(hero.position) * _view_scale
+
+
+func _follow_hero(delta: float) -> void:
+	_arena_origin = _arena_origin.lerp(_camera_target(), 1.0 - exp(-9.0 * delta))
+
+
 func _restart_room() -> void:
-	if campaign == null:
+	if map_active:
+		start_map(-1, shield_on)
+	elif campaign == null:
 		start_fight(mode)
 	else:
 		_start_campaign_room()
@@ -505,8 +700,13 @@ func _sim_step(dt: float) -> void:
 	# before collision, but still resolve enemy STRIKES before hero ATTACKS (tie = defeat).
 	hero.pre_resolve_defense()
 	for e in enemies:
+		# On the combined map, rooms the hero has not reached yet stand still.
+		if map_active and int(e.get_meta(&"map_room", 0)) > _map_room:
+			continue
 		e.step(dt)
 	hero.step(dt, enemies)
+	if map_active:
+		_step_map()
 	_resolve_overlaps(dt)
 	_step_vents()
 	input.end_step()
@@ -562,6 +762,9 @@ func _check_outcome() -> void:
 		return
 	if enemies_alive() > 0 or intermission_active:
 		return
+	if map_active:
+		_finish(Outcome.VICTORY)
+		return
 	if campaign != null:
 		if not _waves_left.is_empty():
 			_spawn_next_wave()
@@ -616,6 +819,8 @@ func _process(delta: float) -> void:
 	if not paused:
 		fx.advance(delta)
 	fx.shake_enabled = GameSettings.screen_shake
+	if map_active:
+		_follow_hero(delta)
 	arena_root.position = _arena_origin + fx.shake_offset()
 	match state:
 		State.FIGHTING:
@@ -832,6 +1037,7 @@ func resume_game() -> void:
 ## Leaves the fight for the loadout screen (from the pause panel).
 func return_to_menu() -> void:
 	campaign = null
+	map_active = false
 	for e in enemies:
 		iso_layer.remove_child(e)
 		e.queue_free()
@@ -977,12 +1183,17 @@ func _apply_layout() -> void:
 		vp.x - insets.x - insets.z - 20.0,
 		vp.y - band_h - top - 10.0)
 	# The isometric diamond spans x in [-H, W] and y in [0, (W + H) / 2] around the ground origin.
-	var a := tuning.arena_size
+	# A combined map is far larger than the screen: scale it as one room and follow the hero.
+	var a := _view_size if map_active else tuning.arena_size
 	var extent := Vector2(a.x + a.y, (a.x + a.y) * 0.5)
 	var s := minf(free.size.x / extent.x, free.size.y / extent.y)
 	arena_root.scale = Vector2(s, s)
 	var local_center := Vector2((a.x - a.y) * 0.5, (a.x + a.y) * 0.25)
 	_arena_origin = free.get_center() - local_center * s
+	_view_centre = free.get_center()
+	_view_scale = s
+	if map_active:
+		_arena_origin = _camera_target()
 	arena_root.position = _arena_origin
 	hud.layout(vp, insets, band_h)
 	controls.layout(vp, band_h, insets)

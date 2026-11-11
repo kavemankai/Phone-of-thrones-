@@ -40,6 +40,9 @@ func _draw() -> void:
 		_draw_bar_layout()
 	if game.campaign != null:
 		_draw_campaign()
+	elif game.map_active and not game.map_label.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(inset_left + 24.0, inset_top + 32.0),
+				game.map_label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1.0, 0.86, 0.64))
 
 
 func _draw_campaign() -> void:

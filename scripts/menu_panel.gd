@@ -10,6 +10,7 @@ signal quit_requested
 signal controls_requested
 signal campaign_requested(weapon_index: int, shield: bool)
 signal continue_requested
+signal map_requested(weapon_index: int, shield: bool)
 
 const TITLE_ART := preload("res://assets/ui/title.webp")
 const ENDING_ART := preload("res://assets/ui/ending.webp")
@@ -196,6 +197,13 @@ func _ready() -> void:
 	UiFocus.style(bindings)
 	bindings.pressed.connect(func(): controls_requested.emit())
 	footer.add_child(bindings)
+	var all_rooms := Button.new()
+	all_rooms.text = "All rooms (test map)"
+	all_rooms.custom_minimum_size = Vector2(250, 42)
+	all_rooms.add_theme_font_size_override("font_size", 20)
+	UiFocus.style(all_rooms)
+	all_rooms.pressed.connect(func(): map_requested.emit(weapon_index, shield_usable()))
+	footer.add_child(all_rooms)
 	footer.add_child(_quit_button)
 	_disarm_quit()
 

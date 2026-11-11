@@ -273,7 +273,7 @@ func _step_free(dt: float) -> void:
 	if ArenaSpace.blocked(position, hero.position, hero.arena_cover):
 		state = State.APPROACH
 		orbit_time = 0.0
-		_move(ArenaSpace.approach(position, hero.position, radius, hero.arena_cover), 1.0, dt)
+		_move(ArenaSpace.approach(position, hero.position, radius, hero.nav()), 1.0, dt)
 		return
 	if profile.orbit_before_attack > 0.0:
 		if dist > next.max_range + 14.0:
@@ -300,7 +300,7 @@ func _step_free(dt: float) -> void:
 		return
 	if wants_in or dist > hover + 6.0:
 		state = State.APPROACH
-		_move(ArenaSpace.approach(position, hero.position, radius, hero.arena_cover), 1.0, dt)
+		_move(ArenaSpace.approach(position, hero.position, radius, hero.nav()), 1.0, dt)
 	elif dist < hover - 10.0:
 		state = State.POSITION
 		_move(-dir, 0.6, dt)
