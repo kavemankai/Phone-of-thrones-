@@ -178,6 +178,7 @@ func _ready() -> void:
 		_fx_hit_landed(e, heavy))
 	hero.dodged.connect(func():
 		sfx.play("dodge")
+		fx.dust(hero.position, 27.0)
 		_tutorial_did(2))
 	hero.damaged.connect(func():
 		sfx.play("hurt")

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/forgebreach-controller-arena-crawl
+      - 'art/**'
       - qa/forgebreach-m2-codex-verification
       - feature/forgebreach-controls-stamina-campaign
       - ccr-7b5c3e78-buce4p
@@ -46,11 +47,26 @@ jobs:
           set -o pipefail
           godot --headless --path . --import 2>&1 | tee build/qa/import.log
 
+      - name: Validate every painted texture and audio asset
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/visual_assets_qa.gd 2>&1 | tee build/qa/visual-assets.log
+
       - name: Run existing combat regression suite
         shell: bash
         run: |
           set -o pipefail
-          godot --headless --path . --script tests/run_tests.gd 2>&1 | tee build/qa/combat-tests.log
+          # The suite normally runs in a few seconds. Keep failures bounded and surface
+          # their final diagnostics rather than streaming unbounded engine error spam.
+          if timeout --signal=TERM 60s godot --headless --path . --script tests/run_tests.gd > build/qa/combat-tests.log 2>&1; then
+            tail -n 24 build/qa/combat-tests.log
+          else
+            status=$?
+            echo "Combat suite failed or exceeded 60 seconds (exit $status)"
+            tail -n 100 build/qa/combat-tests.log
+            exit "$status"
+          fi
 
       - name: Run independent M1 controller and menu checks
         shell: bash
