@@ -7,7 +7,7 @@ const FOE_NAMES := {
 	"guard": "Gate Guard", "pike": "Pike Sentinel",
 	"hound": "War Hound", "sweeper": "Hall Sweeper",
 	"warden": "Iron Warden", "penitent": "Chain Penitent",
-	"herald": "War Herald", "gate_captain": "Gate Captain",
+	"herald": "War Herald", "gate_captain": "Gate Captain", "crown_tyrant": "Crown Tyrant",
 	# Veterans: the kind's name with "!" on the end.
 	"guard!": "Veteran Guard", "pike!": "Veteran Pike", "hound!": "Alpha Hound",
 	"warden!": "Warden Champion", "penitent!": "Flagellant", "herald!": "High Herald",
@@ -17,6 +17,8 @@ const ELITE_HEALTH_MULT := 1.6
 ## a ward is a full table from WardData.
 const PLAN_SLICE := "slice"
 const PLAN_OUTER_WALLS := "outer_walls"
+## The full ten rooms: the Outer Walls, then the Inner Keep.
+const PLAN_FORTRESS := "fortress"
 const ROOMS := [
 	[
 		{"name": "Shattered Gatehouse", "size": Vector2(340, 380), "ground": Color(0.19, 0.18, 0.17), "light": Color(0.62, 0.57, 0.46),
@@ -58,7 +60,12 @@ var parries := 0
 
 
 static func table_for(plan_id: String) -> Array:
-	return WardData.OUTER_WALLS if plan_id == PLAN_OUTER_WALLS else ROOMS
+	match plan_id:
+		PLAN_OUTER_WALLS:
+			return WardData.OUTER_WALLS
+		PLAN_FORTRESS:
+			return WardData.fortress()
+	return ROOMS
 
 
 func table() -> Array:
@@ -70,7 +77,17 @@ func stage_count() -> int:
 
 
 func title() -> String:
-	return WardData.OUTER_WALLS_TITLE if plan == PLAN_OUTER_WALLS else "Fortress slice"
+	match plan:
+		PLAN_OUTER_WALLS:
+			return WardData.OUTER_WALLS_TITLE
+		PLAN_FORTRESS:
+			return WardData.FORTRESS_TITLE
+	return "Fortress slice"
+
+
+## A real run (pickups, vows, prompts), as opposed to the original three-room slice.
+func is_ward_run() -> bool:
+	return plan == PLAN_OUTER_WALLS or plan == PLAN_FORTRESS
 
 
 func room() -> Dictionary:
@@ -164,7 +181,7 @@ func door_heal(choice: int) -> float:
 ## The vow sworn by taking a door, or "" for a plain door. Wards only. At most one of a
 ## room's two doors carries one, decided by the run seed, and never a vow already sworn.
 func vow_offer(choice: int) -> String:
-	if plan != PLAN_OUTER_WALLS or door_variants().is_empty():
+	if not is_ward_run() or door_variants().is_empty():
 		return ""
 	var pool: PackedStringArray = []
 	for id: String in Vow.ALL:
@@ -240,7 +257,7 @@ static func read() -> CampaignRun:
 		return null
 	# Older checkpoints have no plan: they are slice runs.
 	var saved_plan: Variant = file.get_value("run", "plan", PLAN_SLICE)
-	if not saved_plan is String or saved_plan not in [PLAN_SLICE, PLAN_OUTER_WALLS]:
+	if not saved_plan is String or saved_plan not in [PLAN_SLICE, PLAN_OUTER_WALLS, PLAN_FORTRESS]:
 		return null
 	var rooms := table_for(saved_plan)
 	if entry[0] < 0 or entry[0] >= rooms.size() or entry[1] < 0 or entry[1] >= rooms[entry[0]].size():
@@ -455,6 +472,41 @@ static func boss_profile(base: EnemyProfile) -> EnemyProfile:
 		second_phase.append(index)
 	second_phase.append(whirl_index)
 	profile.phase2_pattern = second_phase
+	return profile
+
+
+## The final boss: built on the Gate Captain's moves, with more health, a guard-breaking
+## overhead blow, and a second phase that is faster and calls hounds (see Game).
+static func tyrant_profile(base: EnemyProfile) -> EnemyProfile:
+	var profile := boss_profile(base)
+	profile.id = "crown_tyrant"
+	profile.display_name = FOE_NAMES["crown_tyrant"]
+	profile.max_hp = 270.0
+	profile.speed = base.speed * 1.08
+	var breaker := AttackDef.make("Crown breaker", 30.0, 82.0, 60.0, 1.10, 0.12, 1.20)
+	breaker.max_range = 76.0
+	breaker.lock_time = 0.3
+	breaker.guard_cost_mult = 2.0
+	breaker.breaks_bare_guard = true
+	var moves: Array[AttackDef] = []
+	moves.assign(profile.attacks)
+	var whirl_index := moves.size() - 1
+	var breaker_index := moves.size()
+	moves.append(breaker)
+	profile.attacks = moves
+	# First phase: the captain's own pattern with the breaker in it.
+	var first_phase := PackedInt32Array()
+	for index in base.pattern:
+		first_phase.append(index)
+	first_phase.append(breaker_index)
+	profile.pattern = first_phase
+	var second_phase := PackedInt32Array([whirl_index, breaker_index])
+	for index in base.pattern:
+		second_phase.append(index)
+	second_phase.append(whirl_index)
+	profile.phase2_pattern = second_phase
+	profile.phase2_at = 0.5
+	profile.phase2_speed_mult = 1.25
 	return profile
 
 

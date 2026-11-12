@@ -84,7 +84,7 @@ func is_dead() -> bool:
 
 
 func is_captain() -> bool:
-	return profile != null and profile.id == "captain"
+	return profile != null and (profile.id == "captain" or profile.id == "crown_tyrant")
 
 
 ## Cancels whatever the enemy was doing and freezes it for `duration` seconds. A hit on it

@@ -67,6 +67,9 @@ var _clear_delay := 0.0
 var _waves_left: Array = []
 ## Seconds left to show the "reinforcements" banner.
 var wave_notice := 0.0
+## Groups called in mid-fight (the Tyrant's second phase). They enter on the next step, so
+## nothing is added to the enemy list while a strike is still being resolved.
+var _summons: Array = []
 ## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
 var _vents: Array[Rect2] = []
 var _vent_burned: Dictionary = {}
@@ -216,7 +219,7 @@ func _ready() -> void:
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
 	menu.campaign_requested.connect(func(w: int, sh: bool):
-		_new_campaign(w, sh, CampaignRun.PLAN_OUTER_WALLS))
+		_new_campaign(w, sh, CampaignRun.PLAN_FORTRESS))
 	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
@@ -302,6 +305,7 @@ func _prepare_room(room_size: Vector2) -> void:
 	_release_all_input()
 	paused = false
 	_waves_left = []
+	_summons = []
 	wave_notice = 0.0
 	_vents.clear()
 	_vent_burned.clear()
@@ -410,7 +414,7 @@ func _fx_blocked(parried: bool) -> void:
 ## The first room of a ward teaches the controls one at a time, once per machine.
 func tutorial_showing() -> bool:
 	return tutorial_step < TUTORIAL_STEPS and state == State.FIGHTING and campaign != null \
-			and campaign.plan == CampaignRun.PLAN_OUTER_WALLS and campaign.stage == 0
+			and campaign.is_ward_run() and campaign.stage == 0
 
 
 ## What to show for the current step, naming the buttons of the device in use.
@@ -527,6 +531,8 @@ func _spawn_group(kinds: Array, spots: Array[Vector2]) -> void:
 func _campaign_profile(kind: String) -> EnemyProfile:
 	if kind == "gate_captain" and captain_profile != null:
 		return CampaignRun.boss_profile(captain_profile)
+	if kind == "crown_tyrant" and captain_profile != null:
+		return CampaignRun.tyrant_profile(captain_profile)
 	var profile := CampaignRun.enemy_profile(kind, tuning, campaign.stage)
 	if campaign.has_vow(Vow.IRON):
 		profile.max_hp = roundf(profile.max_hp * Vow.IRON_HEALTH_MULT)
@@ -534,8 +540,21 @@ func _campaign_profile(kind: String) -> EnemyProfile:
 
 
 ## The next group enters from whichever end of the room is farther from the hero.
+## A boss crossing into its second phase: a ring, a long freeze, a hard shake. The Crown
+## Tyrant also calls two hounds, which enter on the next step.
+func _on_phase_changed(e: Enemy) -> void:
+	fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
+	fx.hit_stop(0.15)
+	fx.shake(8.0, 0.4)
+	if e.profile.id == "crown_tyrant":
+		_summons.append(["hound", "hound"])
+
+
 func _spawn_next_wave() -> void:
-	var kinds: Array = _waves_left.pop_front()
+	_spawn_far_group(_waves_left.pop_front())
+
+
+func _spawn_far_group(kinds: Array) -> void:
 	var spots := tuning.enemy_spawns()
 	var far_end := tuning.hero_spawn()
 	if far_end.distance_to(hero.position) > spots[0].distance_to(hero.position):
@@ -721,10 +740,7 @@ func _add_enemy(pos: Vector2, idx: int, profile: EnemyProfile) -> Enemy:
 	e.setup(tuning, controller, hero, tuning.arena_size, idx, profile)
 	e.position = pos
 	e.struck.connect(func(): sfx.play("enemy_strike"))
-	e.phase_changed.connect(func():
-		fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
-		fx.hit_stop(0.15)
-		fx.shake(8.0, 0.4))
+	e.phase_changed.connect(_on_phase_changed.bind(e))
 	iso_layer.add_child(e)
 	enemies.append(e)
 	return e
@@ -779,6 +795,8 @@ func _sim_step(dt: float) -> void:
 	if map_active:
 		_step_map()
 	_resolve_overlaps(dt)
+	while not _summons.is_empty() and campaign != null:
+		_spawn_far_group(_summons.pop_front())
 	_step_vents()
 	input.end_step()
 	if intermission_active:
@@ -944,8 +962,11 @@ func _show_campaign_result() -> void:
 	if not campaign.vows.is_empty():
 		pickups += "\nVows: " + ", ".join(Vow.titles(campaign.vows))
 	if won:
-		var heading := "OUTER WALLS BREACHED" if campaign.plan == CampaignRun.PLAN_OUTER_WALLS \
-				else "SLICE COMPLETE"
+		var heading := "SLICE COMPLETE"
+		if campaign.plan == CampaignRun.PLAN_OUTER_WALLS:
+			heading = "OUTER WALLS BREACHED"
+		elif campaign.plan == CampaignRun.PLAN_FORTRESS:
+			heading = "THE FORTRESS HAS FALLEN"
 		menu.show_campaign_result(true, heading, "%s\n%s" % [totals, pickups])
 	else:
 		menu.show_campaign_result(false, "DEFEAT", "Checkpoint: %s  (room %d of %d)\n%s" % [
