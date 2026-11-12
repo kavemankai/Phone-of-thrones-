@@ -822,7 +822,7 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 		if attacking and state == State.ACTIVE:
 			# Painted blade ghosts follow the actual animation sweep; damage remains unchanged.
 			for trail in range(2, 0, -1):
-				var trail_angle := blade_angle - deg_to_rad(float(cur_attack.arc)) * 0.045 * trail
+				var trail_angle: float = float(blade_angle) - deg_to_rad(float(cur_attack.arc)) * 0.045 * float(trail)
 				var trail_dir := Vector2.from_angle(trail_angle)
 				var trail_tint := Color(0.58, 0.85, 1.0, 0.13)
 				if cur_attack.heavy:
