@@ -72,6 +72,10 @@ func _draw_campaign_desktop() -> void:
 		draw_string(font, Vector2(x, y), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
 				Color(1.0, 0.83, 0.35, 0.9))
 		y += 18.0
+	for title in Vow.titles(run.vows):
+		draw_string(font, Vector2(x, y), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 15,
+				Color(1.0, 0.45, 0.38, 0.9))
+		y += 18.0
 
 	var mid_y := (size.y - bar_height) * 0.46
 	if game.wave_notice > 0.0 and game.state == Game.State.FIGHTING:
@@ -95,9 +99,11 @@ func _draw_campaign_desktop() -> void:
 			HORIZONTAL_ALIGNMENT_CENTER, note_w, 20, Color.WHITE)
 
 	var choices := run.choices()
-	var card := Vector2(340.0, 158.0)
 	for i in choices.size():
 		var choice: Dictionary = choices[i]
+		var vow := run.vow_offer(i)
+		# A door with a vow needs room for the vow and its second pickup.
+		var card := Vector2(340.0, 158.0 if vow == "" else 226.0)
 		var left := inset_left + 24.0 if i == 0 else size.x - inset_right - 24.0 - card.x
 		var box := Rect2(left, strip_top - card.y - 10.0, card.x, card.y)
 		var chosen := near == i
@@ -120,7 +126,7 @@ func _draw_campaign_desktop() -> void:
 			draw_string(font, Vector2(left, line), "+ " + " + ".join(foes.slice(2)),
 					HORIZONTAL_ALIGNMENT_CENTER, card.x, 16, ink)
 		line += 22.0
-		var reward := "+%d health" % choice.heal
+		var reward := "+%d health" % int(run.door_heal(i))
 		var bonus := run.guard_reward(i)
 		if bonus > 0:
 			reward += "   +%d max guard" % bonus
@@ -134,6 +140,19 @@ func _draw_campaign_desktop() -> void:
 			line += 19.0
 			draw_string(font, Vector2(left, line), Boon.text(pickup),
 					HORIZONTAL_ALIGNMENT_CENTER, card.x, 13, Color(0.82, 0.86, 0.92))
+		if vow != "":
+			var red := Color(1.0, 0.45, 0.38)
+			line += 26.0
+			draw_string(font, Vector2(left, line), Vow.title(vow),
+					HORIZONTAL_ALIGNMENT_CENTER, card.x, 19, red)
+			line += 18.0
+			draw_string(font, Vector2(left, line), Vow.text(vow),
+					HORIZONTAL_ALIGNMENT_CENTER, card.x, 13, Color(0.95, 0.75, 0.72))
+			var extra := run.bonus_offer(i)
+			if extra != "":
+				line += 20.0
+				draw_string(font, Vector2(left, line), "and also %s" % Boon.title(extra),
+						HORIZONTAL_ALIGNMENT_CENTER, card.x, 15, Color(1.0, 0.83, 0.35))
 
 
 ## A boxed line centred just above the status strip.

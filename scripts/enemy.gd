@@ -396,6 +396,9 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, radius + 3.0, Color(0, 0, 0, 0.3))
 	# Team/elite silhouette: no ambiguity when sprites and telegraphs overlap.
 	var ring_color := Color(1.0, 0.77, 0.22, 0.95) if is_captain() else Color(0.95, 0.25, 0.23, 0.72)
+	if profile.elite:
+		# Veteran: a second, pale ring outside the red one.
+		draw_arc(Vector2.ZERO, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.92, 0.7, 0.9), 2.5)
 	draw_arc(Vector2.ZERO, radius + (10.0 if is_captain() else 5.0),
 			0.0, TAU, 40, ring_color, 3.0 if is_captain() else 2.0)
 	if state == State.WINDUP or state == State.ACTIVE:

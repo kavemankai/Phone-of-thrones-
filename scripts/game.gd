@@ -347,6 +347,10 @@ func _prepare_room(room_size: Vector2) -> void:
 	hero.equip(weapon(), shield_on)
 	hero.run_guard_bonus = float(campaign.guard_bonus) if campaign != null else 0.0
 	hero.boons = campaign.boon_set() if campaign != null else {}
+	hero.damage_taken_mult = Vow.FRAILTY_DAMAGE_MULT \
+			if campaign != null and campaign.has_vow(Vow.FRAILTY) else 1.0
+	controller.max_commits = tuning.max_commits + (Vow.FURY_EXTRA_ATTACKERS
+			if campaign != null and campaign.has_vow(Vow.FURY) else 0)
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
@@ -512,13 +516,21 @@ func _start_campaign_room() -> void:
 
 func _spawn_group(kinds: Array, spots: Array[Vector2]) -> void:
 	for i in mini(kinds.size(), spots.size()):
-		_add_enemy(spots[i], enemies.size(), _campaign_profile(kinds[i]))
+		var kind := String(kinds[i])
+		# Vow of Veterans: the first of each group is its veteran, where the kind has one.
+		if i == 0 and campaign != null and campaign.has_vow(Vow.VETERANS) \
+				and CampaignRun.FOE_NAMES.has(kind + "!"):
+			kind += "!"
+		_add_enemy(spots[i], enemies.size(), _campaign_profile(kind))
 
 
 func _campaign_profile(kind: String) -> EnemyProfile:
 	if kind == "gate_captain" and captain_profile != null:
 		return CampaignRun.boss_profile(captain_profile)
-	return CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+	var profile := CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+	if campaign.has_vow(Vow.IRON):
+		profile.max_hp = roundf(profile.max_hp * Vow.IRON_HEALTH_MULT)
+	return profile
 
 
 ## The next group enters from whichever end of the room is farther from the hero.
@@ -929,6 +941,8 @@ func _show_campaign_result() -> void:
 		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries, campaign.run_seed]
 	var carried := Boon.titles(campaign.boons)
 	var pickups := "Pickups: " + (", ".join(carried) if not carried.is_empty() else "none")
+	if not campaign.vows.is_empty():
+		pickups += "\nVows: " + ", ".join(Vow.titles(campaign.vows))
 	if won:
 		var heading := "OUTER WALLS BREACHED" if campaign.plan == CampaignRun.PLAN_OUTER_WALLS \
 				else "SLICE COMPLETE"
@@ -1077,7 +1091,8 @@ func pause_game(reason := "") -> void:
 	_guard_held_over_pause = false
 	input.clear()
 	_update_touch_controls()
-	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray())
+	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray(),
+			campaign.vows if campaign != null else PackedStringArray())
 	pause_panel.open(reason)
 
 

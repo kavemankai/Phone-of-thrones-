@@ -8,7 +8,11 @@ const FOE_NAMES := {
 	"hound": "War Hound", "sweeper": "Hall Sweeper",
 	"warden": "Iron Warden", "penitent": "Chain Penitent",
 	"herald": "War Herald", "gate_captain": "Gate Captain",
+	# Veterans: the kind's name with "!" on the end.
+	"guard!": "Veteran Guard", "pike!": "Veteran Pike", "hound!": "Alpha Hound",
+	"warden!": "Warden Champion", "penitent!": "Flagellant", "herald!": "High Herald",
 }
+const ELITE_HEALTH_MULT := 1.6
 ## Which room table a run walks. The slice is the original three-room test (ROOMS below);
 ## a ward is a full table from WardData.
 const PLAN_SLICE := "slice"
@@ -44,6 +48,8 @@ var boons := PackedStringArray()
 ## Fixed when the run starts. Decides which pickup each door offers, so a reloaded run
 ## shows the same doors.
 var run_seed := 0
+## Vows sworn so far (Vow ids), in the order taken.
+var vows := PackedStringArray()
 var plan := PLAN_SLICE
 ## Run totals for the ending screen. They count every attempt, including rooms retried.
 var time := 0.0
@@ -108,10 +114,17 @@ func advance(choice: int, current_hp: float, max_hp: float) -> void:
 		return
 	choice = clampi(choice, 0, doors.size() - 1)
 	var next_room: Dictionary = table()[stage + 1][doors[choice]]
+	# Work out everything this door gives before any of it changes the run.
 	var gained := offer(choice)
+	var sworn := vow_offer(choice)
+	var extra := bonus_offer(choice)
 	if gained != "":
 		boons.append(gained)
-	hp = minf(max_hp, current_hp + float(next_room.heal))
+	if sworn != "":
+		vows.append(sworn)
+		if extra != "":
+			boons.append(extra)
+	hp = minf(max_hp, current_hp + door_heal(choice))
 	guard_bonus = mini(16, guard_bonus + guard_reward(choice))
 	stage += 1
 	variant = doors[choice]
@@ -134,6 +147,53 @@ func offer(choice: int) -> String:
 	var first := rng.randi_range(0, pool.size() - 1)
 	var second := (first + 1 + rng.randi_range(0, pool.size() - 2)) % pool.size()
 	return pool[first if choice == 0 else second]
+
+
+func has_vow(id: String) -> bool:
+	return vows.has(id)
+
+
+## Health given by a door, after vows.
+func door_heal(choice: int) -> float:
+	var behind := choices()
+	if choice < 0 or choice >= behind.size() or has_vow(Vow.FASTING):
+		return 0.0
+	return float(behind[choice].heal)
+
+
+## The vow sworn by taking a door, or "" for a plain door. Wards only. At most one of a
+## room's two doors carries one, decided by the run seed, and never a vow already sworn.
+func vow_offer(choice: int) -> String:
+	if plan != PLAN_OUTER_WALLS or door_variants().is_empty():
+		return ""
+	var pool: PackedStringArray = []
+	for id: String in Vow.ALL:
+		if not vows.has(id):
+			pool.append(id)
+	if pool.is_empty():
+		return ""
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([run_seed, stage, "vow"])
+	var door := rng.randi_range(0, 1)
+	var offered := rng.randf() < Vow.OFFER_CHANCE
+	var pick := rng.randi_range(0, pool.size() - 1)
+	return pool[pick] if offered and choice == door else ""
+
+
+## The second pickup that comes with a door's vow: one not owned and not on either door.
+func bonus_offer(choice: int) -> String:
+	if vow_offer(choice) == "":
+		return ""
+	var taken := [offer(0), offer(1)]
+	var pool: PackedStringArray = []
+	for id: String in Boon.ALL:
+		if not boons.has(id) and not taken.has(id):
+			pool.append(id)
+	if pool.is_empty():
+		return ""
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([run_seed, stage, "bonus"])
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 
 func boon_set() -> Dictionary:
@@ -159,6 +219,7 @@ func save() -> Error:
 	file.set_value("run", "boons", boons)
 	file.set_value("run", "seed", run_seed)
 	file.set_value("run", "plan", plan)
+	file.set_value("run", "vows", vows)
 	file.set_value("run", "stats", [time, hits_taken, parries])
 	var temp := CHECKPOINT + ".tmp"
 	var error := file.save(temp)
@@ -199,8 +260,15 @@ static func read() -> CampaignRun:
 		return null
 	# Pickups were added after the first checkpoints: a file without them is a run with none.
 	var saved_boons: Variant = file.get_value("run", "boons", PackedStringArray())
-	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0]:
+	# A door gives one pickup, or two with a vow.
+	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0] * 2:
 		return null
+	var saved_vows: Variant = file.get_value("run", "vows", PackedStringArray())
+	if not saved_vows is PackedStringArray or saved_vows.size() > entry[0]:
+		return null
+	for i in saved_vows.size():
+		if not Vow.exists(saved_vows[i]) or saved_vows.slice(0, i).has(saved_vows[i]):
+			return null
 	for i in saved_boons.size():
 		if not Boon.exists(saved_boons[i]) or saved_boons.slice(0, i).has(saved_boons[i]):
 			return null
@@ -209,6 +277,7 @@ static func read() -> CampaignRun:
 		return null
 	var result := CampaignRun.new()
 	result.boons = saved_boons
+	result.vows = saved_vows
 	result.run_seed = saved_seed
 	result.plan = saved_plan
 	var stats: Variant = file.get_value("run", "stats", null)
@@ -233,6 +302,14 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 	var profile := EnemyProfile.grunt_from(t)
 	profile.display_name = FOE_NAMES[kind]
 	profile.max_hp += 3.0 * stage_index
+	var veteran := kind.ends_with("!")
+	var base := kind.trim_suffix("!")
+	if veteran:
+		# The match below fills in the ordinary kind; the veteran's twist goes on top.
+		profile = enemy_profile(base, t, stage_index)
+		profile.display_name = FOE_NAMES[kind]
+		_make_elite(profile, base)
+		return profile
 	match kind:
 		"pike":
 			profile.id = "pike"
@@ -308,6 +385,52 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 			jab.max_range = 52.0
 			profile.attacks = [jab]
 	return profile
+
+
+## Turns an ordinary profile into its veteran: more health and one change to how it fights.
+static func _make_elite(profile: EnemyProfile, base: String) -> void:
+	profile.elite = true
+	profile.max_hp = roundf(profile.max_hp * ELITE_HEALTH_MULT)
+	profile.bar_width += 12.0
+	var moves: Array[AttackDef] = []
+	match base:
+		"guard", "hound":
+			# Strikes twice: a short recovery, then a faster second blow.
+			var first := profile.attacks[0].duplicate() as AttackDef
+			var second := profile.attacks[0].duplicate() as AttackDef
+			first.recover = 0.18
+			first.chain_to = 1
+			second.windup *= 0.6
+			moves.append(first)
+			moves.append(second)
+		"pike":
+			# A quicker, longer thrust.
+			var thrust := profile.attacks[0].duplicate() as AttackDef
+			thrust.windup *= 0.8
+			thrust.reach += 14.0
+			thrust.max_range += 12.0
+			moves.append(thrust)
+		"warden":
+			# A wider shield and less time with it down.
+			profile.front_guard_arc = 170.0
+			var bash := profile.attacks[0].duplicate() as AttackDef
+			bash.recover = 0.9
+			moves.append(bash)
+		"penitent":
+			# A third sweep.
+			var middle := profile.attacks[1].duplicate() as AttackDef
+			middle.recover = 0.25
+			middle.chain_to = 2
+			var last := profile.attacks[1].duplicate() as AttackDef
+			moves.append(profile.attacks[0])
+			moves.append(middle)
+			moves.append(last)
+		"herald":
+			# A wider ring that speeds its allies more.
+			profile.aura_range = 135.0
+			profile.aura_speed_mult = 1.5
+	if not moves.is_empty():
+		profile.attacks = moves
 
 
 ## The ward boss: the captain, with more health and a second phase at half health that

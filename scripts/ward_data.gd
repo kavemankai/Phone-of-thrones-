@@ -55,7 +55,7 @@ const OUTER_WALLS := [
 			"foes": ["penitent", "pike", "hound"], "heal": 25},
 		{"name": "Hall of Banners", "door": "Shield line", "size": Vector2(330, 450), "style": 2,
 			"ground": Color(0.20, 0.18, 0.20), "light": Color(0.58, 0.55, 0.62),
-			"foes": ["warden", "guard"], "heal": 15},
+			"foes": ["warden", "guard!"], "heal": 15},
 	],
 	[
 		{"name": "Cinder Forge", "door": "Bellows", "size": Vector2(380, 360), "style": 3,

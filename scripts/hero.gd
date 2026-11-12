@@ -54,6 +54,8 @@ var guard := 0.0
 var run_guard_bonus := 0.0
 ## Run pickups in effect (Boon ids as keys). Empty outside a campaign run.
 var boons: Dictionary = {}
+## Multiplier on damage from hits that land (Vow of Frailty). 1 outside a run.
+var damage_taken_mult := 1.0
 ## Seconds left in which the next attack is a Riposte / a Slipstream attack.
 var riposte_left := 0.0
 var slipstream_left := 0.0
@@ -417,6 +419,7 @@ func take_hit(damage: float) -> bool:
 		return false
 	if boons.has(Boon.STONEFOOT):
 		damage *= Boon.STONEFOOT_DAMAGE_MULT
+	damage *= damage_taken_mult
 	hp = maxf(0.0, hp - damage)
 	immune_time = tuning.hit_immunity
 	flash = 0.15
