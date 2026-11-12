@@ -46,6 +46,12 @@ jobs:
           set -o pipefail
           godot --headless --path . --import 2>&1 | tee build/qa/import.log
 
+      - name: Validate every painted texture and audio asset
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/visual_assets_qa.gd 2>&1 | tee build/qa/visual-assets.log
+
       - name: Run existing combat regression suite
         shell: bash
         run: |
