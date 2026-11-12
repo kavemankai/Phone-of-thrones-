@@ -1,61 +1,86 @@
 class_name Sfx
 extends Node
-## Placeholder sounds synthesised at startup. No audio files are shipped.
+## Polyphonic combat cues and one low-volume environmental bed.
 
-const RATE := 22050
 const VOICES := 6
+const STREAMS := {
+	"swing_light": preload("res://assets/audio/swing_light.wav"),
+	"swing_heavy": preload("res://assets/audio/swing_heavy.wav"),
+	"hit": preload("res://assets/audio/hit.wav"),
+	"hurt": preload("res://assets/audio/hurt.wav"),
+	"dodge": preload("res://assets/audio/dodge.wav"),
+	"enemy_strike": preload("res://assets/audio/enemy_strike.wav"),
+	"block": preload("res://assets/audio/block.wav"),
+	"parry": preload("res://assets/audio/parry.wav"),
+	"guard_break": preload("res://assets/audio/guard_break.wav"),
+	"captain": preload("res://assets/audio/captain.wav"),
+	"win": preload("res://assets/audio/win.wav"),
+	"lose": preload("res://assets/audio/lose.wav"),
+}
+const BEDS := {
+	"title": preload("res://assets/audio/title.ogg"),
+	"outer_walls": preload("res://assets/audio/outer_walls.ogg"),
+	"forge": preload("res://assets/audio/forge.ogg"),
+	"crown_pit": preload("res://assets/audio/crown_pit.ogg"),
+}
+const BED_VOLUME := -14.0
 
-var _streams: Dictionary = {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
+var _bed: AudioStreamPlayer
+var _bed_fade: Tween
+var _requested_bed := ""
 
 
 func _ready() -> void:
-	_streams = {
-		"swing_light": _synth(900.0, 300.0, 0.12, 0.8, 0.35),
-		"swing_heavy": _synth(600.0, 140.0, 0.22, 0.7, 0.5),
-		"hit": _synth(240.0, 70.0, 0.14, 0.45, 0.8),
-		"hurt": _synth(190.0, 55.0, 0.28, 0.3, 0.9),
-		"dodge": _synth(1000.0, 2200.0, 0.14, 0.9, 0.25),
-		"enemy_strike": _synth(420.0, 110.0, 0.12, 0.6, 0.45),
-		"block": _synth(900.0, 450.0, 0.1, 0.55, 0.7),
-		"parry": _synth(1500.0, 2100.0, 0.2, 0.05, 0.6),
-		"guard_break": _synth(220.0, 60.0, 0.32, 0.4, 0.9),
-		"captain": _synth(150.0, 105.0, 0.6, 0.12, 0.7),
-		"win": _synth(440.0, 880.0, 0.4, 0.0, 0.5),
-		"lose": _synth(320.0, 70.0, 0.55, 0.1, 0.6),
-	}
 	for i in VOICES:
-		var p := AudioStreamPlayer.new()
-		add_child(p)
-		_players.append(p)
+		var voice := AudioStreamPlayer.new()
+		voice.volume_db = -5.0
+		add_child(voice)
+		_players.append(voice)
+	_bed = AudioStreamPlayer.new()
+	add_child(_bed)
 
 
 func play(sound: String) -> void:
-	if not _streams.has(sound) or _players.is_empty():
+	if DisplayServer.get_name() == "headless" or not STREAMS.has(sound) or _players.is_empty():
 		return
-	var p := _players[_next]
+	var voice := _players[_next]
 	_next = (_next + 1) % _players.size()
-	p.stream = _streams[sound]
-	p.play()
+	voice.stream = STREAMS[sound]
+	voice.play()
 
 
-static func _synth(f0: float, f1: float, dur: float, noise: float, vol: float) -> AudioStreamWAV:
-	var n := int(RATE * dur)
-	var data := PackedByteArray()
-	data.resize(n * 2)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	var phase := 0.0
-	for i in n:
-		var t := float(i) / n
-		phase += TAU * lerpf(f0, f1, t) / RATE
-		var env := pow(1.0 - t, 2.0) * minf(1.0, float(i) / 60.0)
-		var s := sin(phase) * (1.0 - noise) + rng.randf_range(-1.0, 1.0) * noise
-		data.encode_s16(i * 2, int(clampf(s * env * vol, -1.0, 1.0) * 32767.0))
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = RATE
-	wav.stereo = false
-	wav.data = data
-	return wav
+func set_bed(name: String) -> void:
+	var stream: AudioStreamOggVorbis = BEDS.get(name)
+	if DisplayServer.get_name() == "headless" or _requested_bed == name:
+		return
+	_requested_bed = name
+	if _bed_fade != null and _bed_fade.is_valid():
+		_bed_fade.kill()
+	_bed_fade = create_tween()
+	if _bed.playing:
+		_bed_fade.tween_property(_bed, "volume_db", -48.0, 0.22)
+	_bed_fade.tween_callback(_start_bed.bind(stream))
+	if stream != null:
+		_bed_fade.tween_property(_bed, "volume_db", BED_VOLUME, 0.55)
+
+
+func _start_bed(stream: AudioStreamOggVorbis) -> void:
+	_bed.stop()
+	_bed.stream = stream
+	if stream != null:
+		stream.loop = true
+		_bed.volume_db = -48.0
+		_bed.play()
+
+
+
+func _exit_tree() -> void:
+	if _bed_fade != null and _bed_fade.is_valid():
+		_bed_fade.kill()
+	for voice in _players:
+		voice.stop()
+		voice.stream = null
+	_bed.stop()
+	_bed.stream = null

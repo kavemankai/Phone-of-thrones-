@@ -16,6 +16,8 @@ const MAX_FRAME_DT := 0.1
 const HUD_HEIGHT := 110.0
 ## Gap above the arena on PC, where the status bar sits under the arena instead.
 const ARENA_TOP_MARGIN := 14.0
+## Height of the PC status strip under the arena. The phone build keeps its touch band.
+const DESKTOP_BAR_HEIGHT := 96.0
 const TUNING_PATH := "res://resources/tuning.tres"
 const HERO_SCENE := preload("res://scenes/hero.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
@@ -27,6 +29,11 @@ const WEAPON_PATHS := [
 ]
 const CAPTAIN_PATH := "res://resources/captain.tres"
 const DOOR_REACH := 49.0
+## The combined test map: one variant of each Ward I stage ([stage, variant] in
+## WardData.OUTER_WALLS), stacked in a column with a wall and a gate between neighbours.
+const MAP_ROOMS := [[0, 0], [1, 1], [2, 1], [3, 0], [4, 0]]
+const MAP_WALL := 18.0
+const MAP_GATE_WIDTH := 84.0
 
 signal state_changed(new_state: State)
 
@@ -56,6 +63,36 @@ var enemies: Array = []
 var campaign: CampaignRun
 var checkpoint_message := ""
 var _clear_delay := 0.0
+## Enemy groups still to enter the current campaign room.
+var _waves_left: Array = []
+## Seconds left to show the "reinforcements" banner.
+var wave_notice := 0.0
+## Groups called in mid-fight (the Tyrant's second phase). They enter on the next step, so
+## nothing is added to the enemy list while a strike is still being resolved.
+var _summons: Array = []
+## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
+var _vents: Array[Rect2] = []
+var _vent_burned: Dictionary = {}
+## Combined test map state. Room 0 is where the hero starts; gate k stands between room k
+## and room k + 1 and opens when every enemy of room k is dead.
+var map_active := false
+var map_label := ""
+var _map_rooms: Array[Rect2] = []
+var _map_names: Array[String] = []
+var _map_walls: Array[Rect2] = []
+var _map_gates: Array[Rect2] = []
+var _map_gate_open: Array[bool] = []
+var _map_props: Array = []
+var _map_prop_styles: Array = []
+## The furthest room the hero has reached. Enemies of later rooms wait until then.
+var _map_room := 0
+var _view_size := Vector2(400, 400)
+var _view_centre := Vector2.ZERO
+var _view_scale := 1.0
+## First-room control prompts: 0 move, 1 attack, 2 roll, 3 guard, 4 finished.
+const TUTORIAL_STEPS := 4
+var tutorial_step := 0
+var _tutorial_moved := 0.0
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -79,10 +116,16 @@ var bindings_panel: BindingsPanel
 var _bindings_return_panel: Control
 var _bindings_return_focus: Control
 var sfx: Sfx
+var fx: CombatFx
+## Where the arena sits before any screen shake is added.
+var _arena_origin := Vector2.ZERO
 
 
 func _ready() -> void:
 	InputActions.ensure()
+	GameSettings.ensure_loaded()
+	if GameSettings.tutorial_done:
+		tutorial_step = TUTORIAL_STEPS
 	touch_ui = OS.has_feature("mobile")
 	# A private copy, so changing values at runtime (tests) never edits the shared resource.
 	var loaded := load(TUNING_PATH) as Tuning
@@ -122,13 +165,32 @@ func _ready() -> void:
 	hero = HERO_SCENE.instantiate() as Hero
 	hero.setup(tuning, input, tuning.arena_size)
 	iso_layer.add_child(hero)
-	hero.swung.connect(func(heavy: bool): sfx.play("swing_heavy" if heavy else "swing_light"))
-	hero.hit_landed.connect(func(_e: Enemy, _h: bool): sfx.play("hit"))
-	hero.dodged.connect(func(): sfx.play("dodge"))
-	hero.damaged.connect(func(): sfx.play("hurt"))
-	hero.died.connect(func(): sfx.play("hurt"))
-	hero.blocked.connect(func(parried: bool): sfx.play("parry" if parried else "block"))
-	hero.guard_broken.connect(func(): sfx.play("guard_break"))
+	fx = CombatFx.new()
+	iso_layer.add_child(fx)
+	hero.swung.connect(func(heavy: bool):
+		sfx.play("swing_heavy" if heavy else "swing_light")
+		_tutorial_did(1))
+	hero.hit_landed.connect(func(e: Enemy, heavy: bool):
+		sfx.play("hit")
+		_fx_hit_landed(e, heavy))
+	hero.dodged.connect(func():
+		sfx.play("dodge")
+		_tutorial_did(2))
+	hero.damaged.connect(func():
+		sfx.play("hurt")
+		_count_hit()
+		_fx_hero_hurt())
+	hero.died.connect(func():
+		sfx.play("hurt")
+		_count_hit()
+		_fx_hero_hurt())
+	hero.blocked.connect(func(parried: bool):
+		sfx.play("parry" if parried else "block")
+		_count_parry(parried)
+		_fx_blocked(parried))
+	hero.guard_broken.connect(func():
+		sfx.play("guard_break")
+		fx.shake(6.0, 0.25))
 
 	var ui := CanvasLayer.new()
 	ui.name = "UI"
@@ -144,15 +206,20 @@ func _ready() -> void:
 	menu = MenuPanel.new()
 	ui.add_child(menu)
 	menu.set_weapons(weapons)
+	menu.map_requested.connect(func(w: int, sh: bool): start_map(w, sh))
 	menu.fight_requested.connect(func(m: int, w: int, sh: bool):
 		if campaign != null and state == State.RESULT and outcome == Outcome.DEFEAT:
 			_start_campaign_room()
+			return
+		if map_active and state == State.RESULT:
+			start_map(w, sh)
 			return
 		shield_on = sh
 		split_attacks = menu.split_attacks
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
-	menu.campaign_requested.connect(_new_campaign)
+	menu.campaign_requested.connect(func(w: int, sh: bool):
+		_new_campaign(w, sh, CampaignRun.PLAN_FORTRESS))
 	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
@@ -191,10 +258,14 @@ func loadout_name() -> String:
 
 
 func captain_alive() -> bool:
+	return not captain_name().is_empty()
+
+
+func captain_name() -> String:
 	for e in enemies:
 		if e.is_captain() and not e.is_dead():
-			return true
-	return false
+			return e.profile.display_name
+	return ""
 
 
 func enemies_alive() -> int:
@@ -233,6 +304,32 @@ func _prepare_room(room_size: Vector2) -> void:
 	controls.reset()
 	_release_all_input()
 	paused = false
+	_waves_left = []
+	_summons = []
+	wave_notice = 0.0
+	_vents.clear()
+	_vent_burned.clear()
+	map_active = false
+	map_label = ""
+	_map_rooms.clear()
+	_map_names.clear()
+	_map_walls.clear()
+	_map_gates.clear()
+	_map_gate_open.clear()
+	_map_props.clear()
+	_map_prop_styles.clear()
+	_map_room = 0
+	hero.nav_override = false
+	hero.nav_cover.clear()
+	hero.nav_waypoints.clear()
+	arena_view.tiles.clear()
+	arena_view.walls.clear()
+	arena_view.locked_gates.clear()
+	arena_view.open_gates.clear()
+	arena_view.cover_styles.clear()
+	arena_view.vents.clear()
+	arena_view.vent_time = 0.0
+	fx.clear()
 	tuning.arena_size = room_size
 	hero.arena_size = room_size
 	hero.arena_cover.clear()
@@ -254,6 +351,10 @@ func _prepare_room(room_size: Vector2) -> void:
 	hero.equip(weapon(), shield_on)
 	hero.run_guard_bonus = float(campaign.guard_bonus) if campaign != null else 0.0
 	hero.boons = campaign.boon_set() if campaign != null else {}
+	hero.damage_taken_mult = Vow.FRAILTY_DAMAGE_MULT \
+			if campaign != null and campaign.has_vow(Vow.FRAILTY) else 1.0
+	controller.max_commits = tuning.max_commits + (Vow.FURY_EXTRA_ATTACKERS
+			if campaign != null and campaign.has_vow(Vow.FURY) else 0)
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
@@ -261,6 +362,14 @@ func _prepare_room(room_size: Vector2) -> void:
 
 
 func _begin_room() -> void:
+	arena_view.rebuild_props(iso_layer)
+	match arena_view.room_style:
+		3:
+			sfx.set_bed("forge")
+		4:
+			sfx.set_bed("crown_pit")
+		_:
+			sfx.set_bed("outer_walls")
 	arena_view.queue_redraw()
 	_apply_layout()
 	outcome = Outcome.NONE
@@ -275,8 +384,92 @@ func _begin_room() -> void:
 	_set_state(State.FIGHTING)
 
 
-func _new_campaign(w: int, shield: bool) -> void:
+## Impact feedback. Each of these only asks CombatFx for a freeze, a shake or a mark; the
+## simulation has already resolved the hit.
+func _fx_hit_landed(e: Enemy, heavy: bool) -> void:
+	fx.spark(e.position, Color(1.0, 0.86, 0.55) if heavy else Color(1, 1, 1), 30.0 if heavy else 20.0)
+	fx.hit_stop(0.09 if heavy else 0.045)
+	if heavy:
+		fx.shake(3.5, 0.16)
+	if e.is_dead():
+		fx.ring(e.position, Color(1.0, 0.55, 0.35), 46.0, 0.30)
+
+
+func _fx_hero_hurt() -> void:
+	fx.spark(hero.position, Color(1.0, 0.35, 0.28), 26.0)
+	fx.hit_stop(0.06)
+	fx.shake(5.0, 0.20)
+
+
+func _fx_blocked(parried: bool) -> void:
+	if parried:
+		fx.ring(hero.position, Color(1.0, 0.85, 0.3), 70.0, 0.36)
+		fx.spark(hero.position, Color(1.0, 0.92, 0.6), 30.0, 0.26)
+		fx.hit_stop(0.12)
+	else:
+		fx.spark(hero.position, Color(0.65, 0.85, 1.0), 16.0, 0.16)
+		fx.hit_stop(0.03)
+
+
+## The first room of a ward teaches the controls one at a time, once per machine.
+func tutorial_showing() -> bool:
+	return tutorial_step < TUTORIAL_STEPS and state == State.FIGHTING and campaign != null \
+			and campaign.is_ward_run() and campaign.stage == 0
+
+
+## What to show for the current step, naming the buttons of the device in use.
+func tutorial_text() -> String:
+	var rows := InputPrompts.combat(prompt_style, not split_attacks)
+	# Pad rows are move, aim, light, heavy, roll, guard; the keyboard has no aim row.
+	var shift := 1 if prompt_style != InputPrompts.Style.KEYBOARD else 0
+	match tutorial_step:
+		0:
+			return "Move with %s" % rows[0][0]
+		1:
+			return "%s light attack      %s heavy attack" % [rows[1 + shift][0], rows[2 + shift][0]]
+		2:
+			return "%s rolls through an attack" % rows[3 + shift][0]
+		3:
+			return "Hold %s to guard. Raise it just before a hit to parry." % rows[4 + shift][0]
+	return ""
+
+
+func _tutorial_did(step: int) -> void:
+	if tutorial_showing() and tutorial_step == step:
+		tutorial_step += 1
+		if tutorial_step >= TUTORIAL_STEPS:
+			GameSettings.tutorial_done = true
+			GameSettings.save()
+
+
+## Steps that have no signal of their own: walking for half a second, and raising the guard.
+func _tutorial_watch(delta: float) -> void:
+	if not tutorial_showing():
+		return
+	if tutorial_step == 0:
+		if input.move_vector().length() > 0.5:
+			_tutorial_moved += delta
+		if _tutorial_moved >= 0.5:
+			_tutorial_did(0)
+	elif tutorial_step == 3 and hero.is_guarding():
+		_tutorial_did(3)
+
+
+func _count_hit() -> void:
+	if campaign != null and state == State.FIGHTING:
+		campaign.hits_taken += 1
+
+
+func _count_parry(parried: bool) -> void:
+	if parried and campaign != null and state == State.FIGHTING:
+		campaign.parries += 1
+
+
+## Starts a run. The menu starts the first ward; the default is the original three-room
+## slice, kept so its checks still describe what they were written for.
+func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE) -> void:
 	campaign = CampaignRun.new()
+	campaign.plan = plan
 	campaign.weapon_index = w
 	campaign.shield = shield
 	campaign.split = menu.split_attacks
@@ -310,21 +503,227 @@ func _start_campaign_room() -> void:
 	if arena_view.room_style < 0:
 		_test_room_size = tuning.arena_size
 	_prepare_room(room["size"])
-	arena_view.room_style = campaign.stage
+	arena_view.room_style = room.get("style", campaign.stage)
 	arena_view.has_doors = not campaign.choices().is_empty()
 	arena_view.room_ground = room.ground
 	arena_view.room_light = room.light
 	hero.arena_cover.assign(room.get("cover", []))
 	arena_view.cover.assign(hero.arena_cover)
+	_vents.assign(room.get("vents", []))
+	arena_view.vents.assign(_vents)
 	hero.hp = clampf(campaign.hp, 1.0, tuning.hero_max_hp)
-	var spots := tuning.enemy_spawns()
-	for i in room.foes.size():
-		_add_enemy(spots[i], i, CampaignRun.enemy_profile(room.foes[i], tuning, campaign.stage))
+	_waves_left = room.get("waves", []).duplicate()
+	wave_notice = 0.0
+	_spawn_group(room.foes, tuning.enemy_spawns())
 	_begin_room()
 
 
+func _spawn_group(kinds: Array, spots: Array[Vector2]) -> void:
+	for i in mini(kinds.size(), spots.size()):
+		var kind := String(kinds[i])
+		# Vow of Veterans: the first of each group is its veteran, where the kind has one.
+		if i == 0 and campaign != null and campaign.has_vow(Vow.VETERANS) \
+				and CampaignRun.FOE_NAMES.has(kind + "!"):
+			kind += "!"
+		_add_enemy(spots[i], enemies.size(), _campaign_profile(kind))
+
+
+func _campaign_profile(kind: String) -> EnemyProfile:
+	if kind == "gate_captain" and captain_profile != null:
+		return CampaignRun.boss_profile(captain_profile)
+	if kind == "crown_tyrant" and captain_profile != null:
+		return CampaignRun.tyrant_profile(captain_profile)
+	var profile := CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+	if campaign.has_vow(Vow.IRON):
+		profile.max_hp = roundf(profile.max_hp * Vow.IRON_HEALTH_MULT)
+	return profile
+
+
+## The next group enters from whichever end of the room is farther from the hero.
+## A boss crossing into its second phase: a ring, a long freeze, a hard shake. The Crown
+## Tyrant also calls two hounds, which enter on the next step.
+func _on_phase_changed(e: Enemy) -> void:
+	fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
+	fx.hit_stop(0.15)
+	fx.shake(8.0, 0.4)
+	if e.profile.id == "crown_tyrant":
+		_summons.append(["hound", "hound"])
+
+
+func _spawn_next_wave() -> void:
+	_spawn_far_group(_waves_left.pop_front())
+
+
+func _spawn_far_group(kinds: Array) -> void:
+	var spots := tuning.enemy_spawns()
+	var far_end := tuning.hero_spawn()
+	if far_end.distance_to(hero.position) > spots[0].distance_to(hero.position):
+		var centre := tuning.arena_size * 0.5
+		for i in spots.size():
+			spots[i] = centre * 2.0 - spots[i]
+	_spawn_group(kinds, spots)
+	wave_notice = 1.6
+	sfx.play("captain")
+
+
+## The combined test map: every Ward I room on one floor, hero at the bottom, the Gate
+## Captain at the top. No doors to choose and no pickups; each gate stays locked until the
+## room in front of it is cleared, then you walk through.
+func start_map(weapon_idx: int, shield: bool) -> void:
+	campaign = null
+	checkpoint_message = ""
+	shield_on = shield
+	split_attacks = menu.split_attacks
+	directional_guard = menu.directional_guard
+	if weapon_idx >= 0:
+		weapon_index = clampi(weapon_idx, 0, weapons.size() - 1)
+	var picks: Array[Dictionary] = []
+	var width := 0.0
+	var depth := MAP_WALL * (MAP_ROOMS.size() - 1)
+	for pick: Array in MAP_ROOMS:
+		var room: Dictionary = WardData.OUTER_WALLS[pick[0]][pick[1]]
+		picks.append(room)
+		var extent: Vector2 = room["size"]
+		width = maxf(width, extent.x)
+		depth += extent.y
+	var map_size := Vector2(width, depth)
+	if arena_view.room_style < 0:
+		_test_room_size = tuning.arena_size
+	_prepare_room(map_size)
+	map_active = true
+	_view_size = Vector2(width, 400.0)
+	arena_view.room_style = 0
+	arena_view.has_doors = false
+
+	var gate_left := (width - MAP_GATE_WIDTH) * 0.5
+	var gate_right := gate_left + MAP_GATE_WIDTH
+	var hero_start := Vector2.ZERO
+	var spawns: Array = []
+	var cursor := depth
+	for k in picks.size():
+		var room := picks[k]
+		var extent: Vector2 = room["size"]
+		var origin := Vector2((width - extent.x) * 0.5, cursor - extent.y)
+		var area := Rect2(origin, extent)
+		cursor = origin.y - MAP_WALL
+		_map_rooms.append(area)
+		_map_names.append(String(room["name"]))
+		arena_view.tiles.append({"rect": area, "style": int(room.get("style", k)), "tint": room["ground"]})
+		# A room narrower than the map is closed in at the sides.
+		if origin.x > 0.5:
+			_map_walls.append(Rect2(0.0, origin.y, origin.x, extent.y))
+			_map_walls.append(Rect2(area.end.x, origin.y, width - area.end.x, extent.y))
+		var props: Array[Rect2] = []
+		for footprint: Rect2 in room.get("cover", []):
+			props.append(Rect2(footprint.position + origin, footprint.size))
+		_map_props.append(props)
+		_map_prop_styles.append(int(room.get("style", 0)))
+		for strip: Rect2 in room.get("vents", []):
+			_vents.append(Rect2(strip.position + origin, strip.size))
+		if k < picks.size() - 1:
+			var wall_y := origin.y - MAP_WALL
+			_map_walls.append(Rect2(0.0, wall_y, gate_left, MAP_WALL))
+			_map_walls.append(Rect2(gate_right, wall_y, width - gate_right, MAP_WALL))
+			_map_gates.append(Rect2(gate_left, wall_y, MAP_GATE_WIDTH, MAP_WALL))
+			_map_gate_open.append(false)
+		# Spawn points use the room's own size, then move to where the room sits.
+		tuning.arena_size = extent
+		var spots := tuning.enemy_spawns()
+		if k == 0:
+			hero_start = origin + tuning.hero_spawn()
+		tuning.arena_size = map_size
+		var kinds: Array = room["foes"]
+		for i in mini(kinds.size(), spots.size()):
+			spawns.append([origin + spots[i], String(kinds[i]), k])
+
+	for entry: Array in spawns:
+		var kind: String = entry[1]
+		var room_index: int = entry[2]
+		var profile := CampaignRun.boss_profile(captain_profile) \
+				if kind == "gate_captain" and captain_profile != null \
+				else CampaignRun.enemy_profile(kind, tuning, room_index)
+		var e := _add_enemy(entry[0], enemies.size(), profile)
+		e.set_meta(&"map_room", room_index)
+	arena_view.vents.assign(_vents)
+	hero.position = hero_start
+	_map_room = 0
+	_refresh_map_cover()
+	_begin_room()
+
+
+## Rebuilds what blocks movement and attacks (walls, locked gates, every prop) and what
+## enemies route around (the props of the room being fought in).
+func _refresh_map_cover() -> void:
+	var solid: Array[Rect2] = []
+	var styles: Array[int] = []
+	var locked: Array[Rect2] = []
+	var opened: Array[Rect2] = []
+	solid.append_array(_map_walls)
+	for k in _map_gates.size():
+		if _map_gate_open[k]:
+			opened.append(_map_gates[k])
+		else:
+			locked.append(_map_gates[k])
+	solid.append_array(locked)
+	var props: Array[Rect2] = []
+	for k in _map_props.size():
+		for footprint: Rect2 in _map_props[k]:
+			props.append(footprint)
+			styles.append(int(_map_prop_styles[k]))
+	solid.append_array(props)
+	hero.arena_cover.assign(solid)
+	hero.nav_override = true
+	hero.nav_cover.assign(_map_props[_map_room])
+	hero.nav_waypoints.clear()
+	for gate in opened:
+		hero.nav_waypoints.append(gate.get_center())
+	arena_view.walls.assign(_map_walls)
+	arena_view.locked_gates.assign(locked)
+	arena_view.open_gates.assign(opened)
+	arena_view.cover.assign(props)
+	arena_view.cover_styles.assign(styles)
+	arena_view.queue_redraw()
+	map_label = "All rooms   %d / %d   %s" % [_map_room + 1, _map_rooms.size(), _map_names[_map_room]]
+
+
+## Once per simulation step on the combined map: note the furthest room the hero has
+## reached, and open the gate of any room whose enemies are all dead.
+func _step_map() -> void:
+	var changed := false
+	for k in range(_map_room + 1, _map_rooms.size()):
+		if _map_rooms[k].grow(MAP_WALL * 0.5).has_point(hero.position):
+			_map_room = k
+			changed = true
+	for k in _map_gates.size():
+		if _map_gate_open[k]:
+			continue
+		var cleared := true
+		for e: Enemy in enemies:
+			if int(e.get_meta(&"map_room", 0)) == k and not e.is_dead():
+				cleared = false
+				break
+		if cleared:
+			_map_gate_open[k] = true
+			changed = true
+			sfx.play("win")
+			fx.ring(_map_gates[k].get_center(), Color(0.5, 1.0, 0.55), 90.0, 0.6)
+	if changed:
+		_refresh_map_cover()
+
+
+## Where the arena must sit for the hero to be at the centre of the play area.
+func _camera_target() -> Vector2:
+	return _view_centre - Iso.to_screen(hero.position) * _view_scale
+
+
+func _follow_hero(delta: float) -> void:
+	_arena_origin = _arena_origin.lerp(_camera_target(), 1.0 - exp(-9.0 * delta))
+
+
 func _restart_room() -> void:
-	if campaign == null:
+	if map_active:
+		start_map(-1, shield_on)
+	elif campaign == null:
 		start_fight(mode)
 	else:
 		_start_campaign_room()
@@ -341,6 +740,7 @@ func _add_enemy(pos: Vector2, idx: int, profile: EnemyProfile) -> Enemy:
 	e.setup(tuning, controller, hero, tuning.arena_size, idx, profile)
 	e.position = pos
 	e.struck.connect(func(): sfx.play("enemy_strike"))
+	e.phase_changed.connect(_on_phase_changed.bind(e))
 	iso_layer.add_child(e)
 	enemies.append(e)
 	return e
@@ -380,13 +780,24 @@ func step(dt: float) -> void:
 
 func _sim_step(dt: float) -> void:
 	fight_time += dt
+	if campaign != null:
+		campaign.time += dt
+	_apply_auras()
 	# Input events arrive between simulation steps: honour a just-pressed dodge/block
 	# before collision, but still resolve enemy STRIKES before hero ATTACKS (tie = defeat).
 	hero.pre_resolve_defense()
 	for e in enemies:
+		# On the combined map, rooms the hero has not reached yet stand still.
+		if map_active and int(e.get_meta(&"map_room", 0)) > _map_room:
+			continue
 		e.step(dt)
 	hero.step(dt, enemies)
+	if map_active:
+		_step_map()
 	_resolve_overlaps(dt)
+	while not _summons.is_empty() and campaign != null:
+		_spawn_far_group(_summons.pop_front())
+	_step_vents()
 	input.end_step()
 	if intermission_active:
 		intermission_left -= dt
@@ -396,6 +807,43 @@ func _sim_step(dt: float) -> void:
 	_check_outcome()
 
 
+## A bursting vent burns whoever stands in its strip, once per burst. A hit the hero's roll
+## or hit immunity refuses is tried again next step, like an enemy strike.
+func _step_vents() -> void:
+	for i in _vents.size():
+		if WardData.vent_state(i, fight_time) != WardData.Vent.BURSTING:
+			continue
+		var cycle := WardData.vent_cycle(i, fight_time)
+		var strip := _vents[i]
+		var hero_key := "%d:hero" % i
+		if not hero.is_dead() and strip.has_point(hero.position) \
+				and _vent_burned.get(hero_key, -1) != cycle:
+			if hero.take_hit(WardData.VENT_DAMAGE):
+				_vent_burned[hero_key] = cycle
+		for e: Enemy in enemies:
+			if e.is_dead() or not strip.has_point(e.position):
+				continue
+			var key := "%d:%d" % [i, e.get_instance_id()]
+			if _vent_burned.get(key, -1) != cycle:
+				_vent_burned[key] = cycle
+				# From behind, so a Warden's front shield does not stop fire from the floor.
+				e.take_hit(WardData.VENT_ENEMY_DAMAGE, e.position - e.facing * 10.0, 0.0)
+
+
+## A living Herald speeds up the other living enemies inside its ring.
+func _apply_auras() -> void:
+	for e: Enemy in enemies:
+		e.speed_buff = 1.0
+	for source: Enemy in enemies:
+		if source.is_dead() or source.profile.aura_range <= 0.0:
+			continue
+		for e: Enemy in enemies:
+			if e == source or e.is_dead() or e.profile.aura_range > 0.0:
+				continue
+			if e.position.distance_to(source.position) <= source.profile.aura_range:
+				e.speed_buff = maxf(e.speed_buff, source.profile.aura_speed_mult)
+
+
 func _check_outcome() -> void:
 	# Defeat wins a tie: the hero dying on the same step as the last enemy is a loss.
 	if hero.is_dead():
@@ -403,7 +851,13 @@ func _check_outcome() -> void:
 		return
 	if enemies_alive() > 0 or intermission_active:
 		return
+	if map_active:
+		_finish(Outcome.VICTORY)
+		return
 	if campaign != null:
+		if not _waves_left.is_empty():
+			_spawn_next_wave()
+			return
 		if campaign.choices().is_empty():
 			if CampaignRun.read() != null:
 				var error := DirAccess.remove_absolute(CampaignRun.CHECKPOINT)
@@ -439,19 +893,38 @@ func _set_state(s: State) -> void:
 	_update_touch_controls()
 	match s:
 		State.MENU:
+			sfx.set_bed("title")
 			menu.show_start()
 			menu.set_continue_available(CampaignRun.read() != null)
+		State.RESULT:
+			sfx.set_bed("")
+			menu.visible = false
 		_:
 			menu.visible = false
 	state_changed.emit(s)
 
 
 func _process(delta: float) -> void:
+	if not paused:
+		fx.advance(delta)
+	fx.shake_enabled = GameSettings.screen_shake
+	if map_active:
+		_follow_hero(delta)
+	arena_root.position = _arena_origin + fx.shake_offset()
 	match state:
 		State.FIGHTING:
 			if paused:
 				return
+			wave_notice = maxf(0.0, wave_notice - delta)
+			if not _vents.is_empty():
+				arena_view.vent_time = fight_time
+				arena_view.queue_redraw()
+			_tutorial_watch(delta)
 			_poll_devices()
+			# Hit-stop: hold the fight for a few frames after an impact. Input is still read,
+			# and its press flags wait in CombatInput for the next step, so nothing is lost.
+			if fx.frozen():
+				return
 			step(delta)
 		State.ROOM_CLEAR:
 			if paused:
@@ -468,14 +941,36 @@ func _process(delta: float) -> void:
 			hero.walk_clear_room(minf(delta, MAX_FRAME_DT))
 			_update_near_door()
 		State.RESULT:
+			wave_notice = 0.0
 			if result_timer > 0.0:
 				result_timer -= delta
 				if result_timer <= 0.0:
 					if campaign == null:
 						menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
 					else:
-						menu.show_campaign_result(outcome == Outcome.VICTORY, campaign.room().name)
+						_show_campaign_result()
 					menu.set_continue_available(CampaignRun.read() != null)
+
+
+func _show_campaign_result() -> void:
+	var won := outcome == Outcome.VICTORY
+	var seconds := int(campaign.time)
+	var totals := "Time %d:%02d      Hits taken %d      Parries %d      Seed %d" % [
+		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries, campaign.run_seed]
+	var carried := Boon.titles(campaign.boons)
+	var pickups := "Pickups: " + (", ".join(carried) if not carried.is_empty() else "none")
+	if not campaign.vows.is_empty():
+		pickups += "\nVows: " + ", ".join(Vow.titles(campaign.vows))
+	if won:
+		var heading := "SLICE COMPLETE"
+		if campaign.plan == CampaignRun.PLAN_OUTER_WALLS:
+			heading = "OUTER WALLS BREACHED"
+		elif campaign.plan == CampaignRun.PLAN_FORTRESS:
+			heading = "THE FORTRESS HAS FALLEN"
+		menu.show_campaign_result(true, heading, "%s\n%s" % [totals, pickups])
+	else:
+		menu.show_campaign_result(false, "DEFEAT", "Checkpoint: %s  (room %d of %d)\n%s" % [
+			campaign.room().name, campaign.stage + 1, campaign.stage_count(), pickups])
 
 
 func _update_near_door() -> void:
@@ -617,6 +1112,8 @@ func pause_game(reason := "") -> void:
 	_guard_held_over_pause = false
 	input.clear()
 	_update_touch_controls()
+	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray(),
+			campaign.vows if campaign != null else PackedStringArray())
 	pause_panel.open(reason)
 
 
@@ -636,6 +1133,7 @@ func resume_game() -> void:
 ## Leaves the fight for the loadout screen (from the pause panel).
 func return_to_menu() -> void:
 	campaign = null
+	map_active = false
 	for e in enemies:
 		iso_layer.remove_child(e)
 		e.queue_free()
@@ -771,9 +1269,9 @@ func _apply_layout() -> void:
 	var insets := _safe_insets(vp)
 	# The strip under the arena: touch buttons on a phone, the status bar and button legend
 	# on PC. The arena never reaches into it.
-	var band_h := vp.y * tuning.control_band_fraction
+	var band_h := vp.y * tuning.control_band_fraction if touch_ui else DESKTOP_BAR_HEIGHT + insets.w
 	var top := insets.y + (HUD_HEIGHT if touch_ui else ARENA_TOP_MARGIN)
-	if campaign != null:
+	if campaign != null and touch_ui:
 		top += 35.0
 	var free := Rect2(
 		insets.x + 10.0,
@@ -781,12 +1279,18 @@ func _apply_layout() -> void:
 		vp.x - insets.x - insets.z - 20.0,
 		vp.y - band_h - top - 10.0)
 	# The isometric diamond spans x in [-H, W] and y in [0, (W + H) / 2] around the ground origin.
-	var a := tuning.arena_size
+	# A combined map is far larger than the screen: scale it as one room and follow the hero.
+	var a := _view_size if map_active else tuning.arena_size
 	var extent := Vector2(a.x + a.y, (a.x + a.y) * 0.5)
 	var s := minf(free.size.x / extent.x, free.size.y / extent.y)
 	arena_root.scale = Vector2(s, s)
 	var local_center := Vector2((a.x - a.y) * 0.5, (a.x + a.y) * 0.25)
-	arena_root.position = free.get_center() - local_center * s
+	_arena_origin = free.get_center() - local_center * s
+	_view_centre = free.get_center()
+	_view_scale = s
+	if map_active:
+		_arena_origin = _camera_target()
+	arena_root.position = _arena_origin
 	hud.layout(vp, insets, band_h)
 	controls.layout(vp, band_h, insets)
 	menu.layout(vp)

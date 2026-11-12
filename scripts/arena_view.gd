@@ -3,9 +3,24 @@ extends Node2D
 ## Flat ground, a faint grid so movement is easy to read, and a visible boundary.
 
 const GROUND := Color(0.17, 0.22, 0.18)
-const GRID := Color(1, 1, 1, 0.05)
 const BORDER := Color(0.62, 0.55, 0.42)
-const GRID_STEP := 60.0
+const FLOORS := [
+	preload("res://assets/arenas/shattered_gatehouse.webp"),
+	preload("res://assets/arenas/blood_kennels.webp"),
+	preload("res://assets/arenas/hall_of_banners.webp"),
+	preload("res://assets/arenas/cinder_forge.webp"),
+	preload("res://assets/arenas/crown_pit.webp"),
+	preload("res://assets/arenas/test_room.webp"),
+]
+const COVER_ART := {
+	0: preload("res://assets/props/masonry.webp"),
+	1: preload("res://assets/props/barricade.webp"),
+	3: preload("res://assets/props/anvil.webp"),
+}
+const SEALED_DOOR := preload("res://assets/props/door_sealed.webp")
+const OPEN_DOOR := preload("res://assets/props/door_open.webp")
+const BRAZIER := preload("res://assets/props/brazier.webp")
+
 
 var arena_size := Vector2(340, 380)
 var room_ground := GROUND
@@ -15,6 +30,18 @@ var doors_open := false
 var has_doors := false
 var near_door := -1
 var cover: Array[Rect2] = []
+## Floor strips that burst on a timer (see WardData). Game sets vent_time every frame.
+var vents: Array[Rect2] = []
+var vent_time := 0.0
+## Combined map: when tiles is not empty the view draws one floor per tile ({rect, style,
+## tint}) with walls and gates between them, instead of a single room.
+var tiles: Array[Dictionary] = []
+var walls: Array[Rect2] = []
+var locked_gates: Array[Rect2] = []
+var open_gates: Array[Rect2] = []
+## Prop art for each entry of `cover` on a combined map (a room style per footprint).
+var cover_styles: Array[int] = []
+var _props: Array[PropSprite] = []
 
 
 func door_position(index: int) -> Vector2:
@@ -26,77 +53,123 @@ func _ready() -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, arena_size), room_ground)
-	var x := GRID_STEP
-	while x < arena_size.x:
-		draw_line(Vector2(x, 0), Vector2(x, arena_size.y), GRID, 1.0)
-		x += GRID_STEP
-	var y := GRID_STEP
-	while y < arena_size.y:
-		draw_line(Vector2(0, y), Vector2(arena_size.x, y), GRID, 1.0)
-		y += GRID_STEP
-	draw_rect(Rect2(Vector2.ZERO, arena_size), room_light, false, 6.0)
-	if room_style < 0:
+	if not tiles.is_empty():
+		_draw_map()
 		return
-	var stripe := Color(room_light, 0.23)
-	match room_style:
-		0:
-			for offset in [-28.0, 28.0]:
-				var lane_x := arena_size.x * 0.5 + float(offset)
-				draw_line(Vector2(lane_x, 20.0), Vector2(lane_x, arena_size.y - 20.0), stripe, 4.0)
-		1:
-			for i in 5:
-				draw_rect(Rect2(14.0, 35.0 + i * 52.0, 37.0, 33.0), stripe, false, 3.0)
-		2:
-			draw_rect(Rect2(arena_size * 0.5 - Vector2(46, 154), Vector2(92, 308)), stripe)
+	var floor_rect := Rect2(Vector2.ZERO, arena_size)
+	var floor_index := room_style if room_style >= 0 and room_style < FLOORS.size() - 1 else FLOORS.size() - 1
+	draw_rect(Rect2(Vector2(10, 15), arena_size).grow(7.0), Color(0, 0, 0, 0.65))
+	draw_rect(floor_rect.grow(6.0), Color(0.17, 0.14, 0.12))
+	var tint := Color.WHITE.lerp(room_ground.lightened(0.5), 0.32)
+	draw_texture_rect(FLOORS[floor_index], floor_rect, false, tint)
+	draw_rect(floor_rect, room_light.darkened(0.28), false, 3.0)
+	draw_rect(floor_rect.grow(-5.0), Color(room_light, 0.35), false, 1.0)
+	for i in vents.size():
+		_draw_vent(vents[i], WardData.vent_state(i, vent_time),
+				WardData.vent_warning_progress(i, vent_time))
 	for footprint in cover:
-		_draw_cover(footprint)
-	if room_style == 0 or room_style == 1:
-		_draw_torch(Vector2(31.0, 29.0))
-		_draw_torch(Vector2(arena_size.x - 31.0, 29.0))
+		_draw_cover(footprint, room_style)
+	if room_style in [0, 1, 3, 4]:
+		_draw_brazier(Vector2(39.0, 44.0))
+		_draw_brazier(Vector2(arena_size.x - 31.0, 29.0))
 	if not has_doors:
 		return
 	for i in 2:
 		var point := door_position(i)
-		var tint := Color(1.0, 0.83, 0.35) if i == near_door else room_light
+		var edge := Color(1.0, 0.83, 0.35) if i == near_door else room_light
 		if not doors_open:
-			tint = tint.darkened(0.50)
-		draw_circle(point, 19.0, tint.darkened(0.65))
-		draw_arc(point, 20.0, 0.0, TAU, 28, tint, 3.0)
+			edge = edge.darkened(0.50)
+		draw_circle(point, 19.0, Color(0.09, 0.07, 0.05, 0.75))
+		draw_arc(point, 20.0, 0.0, TAU, 28, edge, 3.0)
 		draw_set_transform_matrix(Transform2D(0.0, point) * Iso.upright())
-		draw_rect(Rect2(-14.0, -41.0, 28.0, 41.0), tint.darkened(0.55))
-		draw_rect(Rect2(-14.0, -41.0, 28.0, 41.0), tint, false, 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(-10.0, -15.0), str(i + 1),
-				HORIZONTAL_ALIGNMENT_CENTER, 20.0, 19, Color.WHITE)
+		var door := OPEN_DOOR if doors_open else SEALED_DOOR
+		draw_texture_rect(door, Rect2(-23.0, -61.0, 46.0, 61.0), false,
+				Color(1.22, 1.10, 0.85) if i == near_door else Color.WHITE)
+		draw_string(ThemeDB.fallback_font, Vector2(-10.0, -11.0), str(i + 1),
+				HORIZONTAL_ALIGNMENT_CENTER, 20.0, 16, Color(1.0, 0.92, 0.72))
 		draw_set_transform(Vector2.ZERO)
 
 
-func _draw_cover(footprint: Rect2) -> void:
-	var masonry := room_style == 0
-	var top_color := Color(0.38, 0.36, 0.32) if masonry else Color(0.32, 0.23, 0.17)
-	draw_rect(footprint, top_color)
-	draw_rect(footprint, Color(0.10, 0.09, 0.08), false, 4.0)
-	var mid := footprint.get_center()
-	if masonry:
-		draw_line(Vector2(footprint.position.x, mid.y), Vector2(footprint.end.x, mid.y),
-				top_color.darkened(0.4), 3.0)
-		draw_line(Vector2(mid.x - 15.0, footprint.position.y), Vector2(mid.x - 15.0, mid.y),
-				top_color.darkened(0.4), 3.0)
-		draw_line(Vector2(mid.x + 15.0, mid.y), Vector2(mid.x + 15.0, footprint.end.y),
-				top_color.darkened(0.4), 3.0)
-	else:
-		for offset in [-15.0, 0.0, 15.0]:
-			var y := mid.y + float(offset)
-			draw_line(Vector2(footprint.position.x + 3.0, y), Vector2(footprint.end.x - 3.0, y),
-					Color(0.53, 0.37, 0.23), 6.0)
-	draw_rect(footprint.grow(3.0), Color(room_light, 0.55), false, 1.5)
+## The strip drawn here is exactly the area that burns: a grate while quiet, a brightening
+## warning, then solid fire for the burst.
+func _draw_vent(strip: Rect2, phase: WardData.Vent, warning: float) -> void:
+	draw_rect(strip, Color(0.03, 0.02, 0.02, 0.55))
+	draw_rect(strip, Color(0.45, 0.22, 0.10, 0.55), false, 1.5)
+	match phase:
+		WardData.Vent.WARNING:
+			draw_rect(strip, Color(1.0, 0.55, 0.15, 0.12 + 0.38 * warning))
+			draw_rect(strip, Color(1.0, 0.7, 0.3, 0.5 + 0.5 * warning), false, 2.0 + 2.0 * warning)
+		WardData.Vent.BURSTING:
+			draw_rect(strip, Color(1.0, 0.93, 0.8, 0.9))
+			draw_rect(strip, Color(1.0, 0.25, 0.1), false, 4.0)
 
 
-func _draw_torch(point: Vector2) -> void:
-	draw_circle(point, 35.0, Color(0.95, 0.49, 0.17, 0.08))
-	draw_circle(point, 22.0, Color(1.0, 0.55, 0.21, 0.10))
+## All the rooms on one floor plan. Walls and gates are drawn from the same rectangles that
+## block movement and attacks.
+func _draw_map() -> void:
+	draw_rect(Rect2(Vector2.ZERO, arena_size).grow(8.0), Color(0.05, 0.045, 0.04))
+	for tile in tiles:
+		var area: Rect2 = tile["rect"]
+		var style: int = tile["style"]
+		var ground: Color = tile["tint"]
+		var index := style if style >= 0 and style < FLOORS.size() - 1 else FLOORS.size() - 1
+		draw_texture_rect(FLOORS[index], area, false, Color.WHITE.lerp(ground.lightened(0.5), 0.32))
+		draw_rect(area, Color(0.55, 0.47, 0.36, 0.5), false, 2.0)
+	for i in vents.size():
+		_draw_vent(vents[i], WardData.vent_state(i, vent_time),
+				WardData.vent_warning_progress(i, vent_time))
+	for gate in open_gates:
+		draw_rect(gate, Color(0.35, 0.75, 0.4, 0.22))
+		draw_rect(gate, Color(0.45, 0.9, 0.5, 0.7), false, 2.0)
+	for wall in walls:
+		_draw_block(wall, 26.0, Color(0.30, 0.28, 0.26))
+	for gate in locked_gates:
+		_draw_block(gate, 20.0, Color(0.48, 0.16, 0.12))
+	for i in cover.size():
+		_draw_cover(cover[i], cover_styles[i] if i < cover_styles.size() else 0)
+
+
+## A plain block standing on a ground rectangle. "Up" on screen is ground (-1, -1), so the
+## top face is the base moved that way and the two faces toward the camera join them.
+func _draw_block(base: Rect2, height: float, tint: Color) -> void:
+	var lift := Vector2(-height, -height)
+	var a := base.position
+	var b := Vector2(base.end.x, base.position.y)
+	var c := base.end
+	var d := Vector2(base.position.x, base.end.y)
+	draw_colored_polygon(PackedVector2Array([b, c, c + lift, b + lift]), tint.darkened(0.35))
+	draw_colored_polygon(PackedVector2Array([d, c, c + lift, d + lift]), tint.darkened(0.2))
+	draw_colored_polygon(PackedVector2Array([a + lift, b + lift, c + lift, d + lift]), tint)
+	draw_polyline(PackedVector2Array([a + lift, b + lift, c + lift, d + lift, a + lift]),
+			tint.lightened(0.25), 1.5)
+
+
+## The footprint only: the area that blocks. The art is a PropSprite on the iso layer, so
+## it sorts by depth with the characters (see rebuild_props).
+func _draw_cover(footprint: Rect2, _style: int) -> void:
+	draw_rect(footprint, Color(0.10, 0.08, 0.07, 0.84))
+	draw_rect(footprint, Color(room_light, 0.70), false, 2.0)
+
+
+## Replaces the cover art nodes on `layer` to match `cover`. Call after cover changes.
+func rebuild_props(layer: Node) -> void:
+	for old in _props:
+		if is_instance_valid(old):
+			old.queue_free()
+	_props.clear()
+	for i in cover.size():
+		var style := room_style
+		if not tiles.is_empty():
+			style = cover_styles[i] if i < cover_styles.size() else 0
+		var prop := PropSprite.new()
+		layer.add_child(prop)
+		prop.place(COVER_ART.get(style, COVER_ART[0]), cover[i], style)
+		_props.append(prop)
+
+
+func _draw_brazier(point: Vector2) -> void:
+	draw_circle(point, 34.0, Color(0.95, 0.49, 0.17, 0.08))
+	draw_circle(point, 20.0, Color(1.0, 0.55, 0.21, 0.10))
 	draw_set_transform_matrix(Transform2D(0.0, point) * Iso.upright())
-	draw_line(Vector2.ZERO, Vector2(0, -24), Color(0.34, 0.28, 0.21), 4.0)
-	draw_colored_polygon(PackedVector2Array([Vector2(-6, -24), Vector2(-1, -38), Vector2(6, -24)]),
-			Color(1.0, 0.60, 0.23))
+	draw_texture_rect(BRAZIER, Rect2(-11.0, -34.0, 22.0, 34.0), false)
 	draw_set_transform(Vector2.ZERO)

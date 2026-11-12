@@ -27,6 +27,13 @@ var has_shield := false
 var input: CombatInput
 var arena_size := Vector2(340, 380)
 var arena_cover: Array[Rect2] = []
+## Cover that enemies route around. Normally the same as arena_cover; a large map narrows it
+## to the props of the room being fought in, so long walls are not searched every step.
+var nav_cover: Array[Rect2] = []
+var nav_override := false
+## Openings in walls (open gates on a large map). An enemy cut off from the hero heads for
+## the one that lies between them.
+var nav_waypoints: Array[Vector2] = []
 
 var state: State = State.IDLE
 var state_time := 0.0
@@ -47,6 +54,8 @@ var guard := 0.0
 var run_guard_bonus := 0.0
 ## Run pickups in effect (Boon ids as keys). Empty outside a campaign run.
 var boons: Dictionary = {}
+## Multiplier on damage from hits that land (Vow of Frailty). 1 outside a run.
+var damage_taken_mult := 1.0
 ## Seconds left in which the next attack is a Riposte / a Slipstream attack.
 var riposte_left := 0.0
 var slipstream_left := 0.0
@@ -171,12 +180,21 @@ func reset(pos: Vector2) -> void:
 	queue_redraw()
 
 
+func nav() -> Array[Rect2]:
+	return nav_cover if nav_override else arena_cover
+
+
 func is_dead() -> bool:
 	return state == State.DEAD
 
 
 func is_invulnerable() -> bool:
-	return immune_time > 0.0 or (state == State.DODGE and state_time < tuning.dodge_iframes)
+	return immune_time > 0.0 or (state == State.DODGE and state_time < roll_iframes())
+
+
+## How long a roll is invulnerable.
+func roll_iframes() -> float:
+	return tuning.dodge_iframes + (Boon.AFTERIMAGE_BONUS if boons.has(Boon.AFTERIMAGE) else 0.0)
 
 
 func charge_progress() -> float:
@@ -342,6 +360,8 @@ func receive_attack(damage: float, origin: Vector2, atk: AttackDef) -> HitResult
 
 func _absorb(damage: float, atk: AttackDef) -> void:
 	var stamina_rate := tuning.stamina_block_shield if has_shield else tuning.stamina_block_bare
+	if boons.has(Boon.BULWARK):
+		stamina_rate *= Boon.BULWARK_COST_MULT
 	_spend_stamina(damage * stamina_rate * atk.guard_cost_mult)
 	var chip := damage * (1.0 - guard_reduction())
 	if chip > 0.0:
@@ -397,6 +417,9 @@ func _regen_guard(dt: float) -> void:
 func take_hit(damage: float) -> bool:
 	if state == State.DEAD or is_invulnerable():
 		return false
+	if boons.has(Boon.STONEFOOT):
+		damage *= Boon.STONEFOOT_DAMAGE_MULT
+	damage *= damage_taken_mult
 	hp = maxf(0.0, hp - damage)
 	immune_time = tuning.hit_immunity
 	flash = 0.15
@@ -462,8 +485,11 @@ func _apply_boons_to_attack(heavy: bool, slipstream: bool) -> void:
 		cur_attack.windup *= Boon.SLIPSTREAM_WINDUP_MULT
 	if riposte_left > 0.0:
 		riposte_left = 0.0
-		cur_attack.damage *= Boon.RIPOSTE_DAMAGE_MULT
+		cur_attack.damage += minf(cur_attack.damage * (Boon.RIPOSTE_DAMAGE_MULT - 1.0),
+				Boon.RIPOSTE_MAX_BONUS)
 		_show_cue("RIPOSTE", Color(1.0, 0.85, 0.22))
+	if not heavy and boons.has(Boon.LONG_REACH):
+		cur_attack.reach *= Boon.LONG_REACH_MULT
 	if heavy and boons.has(Boon.HEAVY_HAND):
 		cur_attack.reach *= Boon.HEAVY_HAND_REACH_MULT
 		cur_attack.knockback += Boon.HEAVY_HAND_KNOCKBACK
@@ -503,9 +529,14 @@ func _apply_hits() -> void:
 		if HitShapes.circle_in_sector(position, facing, cur_attack.reach, cur_attack.arc,
 				e.position, e.radius):
 			hit_ids[id] = true
-			e.take_hit(cur_attack.damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
+			var damage: float = cur_attack.damage
+			if e.is_staggered() and boons.has(Boon.EXECUTIONER):
+				damage *= Boon.EXECUTIONER_MULT
+			e.take_hit(damage, position, cur_attack.knockback, cur_attack.get("stagger", 0.0))
 			if e.is_dead() and boons.has(Boon.BLOOD_PRICE):
 				hp = minf(tuning.hero_max_hp, hp + Boon.BLOOD_PRICE_HEAL)
+			if e.is_dead() and boons.has(Boon.MOMENTUM):
+				dodge_charges = mini(max_charges(), dodge_charges + 1)
 			hit_landed.emit(e, cur_attack.heavy)
 
 
@@ -585,7 +616,7 @@ func _process(delta: float) -> void:
 	parry_flash = maxf(0.0, parry_flash - delta)
 	block_flash = maxf(0.0, block_flash - delta)
 	z_index = int(position.x + position.y)  # isometric depth order: nearer is lower on screen
-	if state == State.DODGE and state_time < (tuning.dodge_iframes if tuning else 0.0):
+	if state == State.DODGE and state_time < (roll_iframes() if tuning else 0.0):
 		modulate.a = 0.4
 	elif immune_time > 0.0 and state != State.DEAD:
 		modulate.a = 0.55 if int(immune_time * 24.0) % 2 == 0 else 1.0
@@ -638,22 +669,41 @@ func _draw() -> void:
 			draw_arc(Vector2.ZERO, r + 8.0, -PI * 0.5, -PI * 0.5 + TAU * charge_progress(), 32,
 					Color(1, 1, 1, 0.8), 3.0)
 
+	var heading := facing * (r + 8.0)
+	draw_line(heading * 0.73, heading, Color(0.65, 0.88, 1.0), 3.0)
 	# Upright pass: the body stands on the ground point.
 	draw_set_transform_matrix(Iso.upright())
-	var height := r * 2.0
-	var side := FLASH_COLOR if flash > 0.0 else BODY_COLOR
+	var height := r * 3.6
+	var heading_screen := Iso.to_screen(facing).normalized()
+	var tint := Color(1.32, 1.22, 1.16) if flash > 0.0 else Color.WHITE
 	if state == State.DODGE:
-		_draw_roll(r, side)
+		var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
+		var direction := Iso.to_screen(dodge_dir).normalized()
+		ForgeArt.actor(self, ForgeArt.HERO_ROLL, height * 0.63, direction, tint,
+				Vector2(0.0, -sin(progress * PI) * 8.0), direction.x * 0.65)
 		return
 	if state == State.DEAD:
-		side = Color(0.3, 0.35, 0.45)
+		ForgeArt.actor(self, ForgeArt.ACTORS.hero, height, heading_screen,
+				Color(0.54, 0.55, 0.58), Vector2(-height * 0.36, -3.0), PI * 0.46)
+		return
 	var shield_pos := _shield_offset(height)
-	# A raised shield is always held in front; a carried one is hidden behind the body when
-	# it is on the far side.
 	var shield_in_front := state == State.BLOCK or shield_pos.y > -height * 0.5
 	if has_shield and not shield_in_front:
-		_draw_shield(shield_pos, state == State.BLOCK)
-	Iso.draw_cylinder(self, r, height, side, Color(0.05, 0.1, 0.25))
+		_draw_shield(shield_pos, false)
+	var pose: Texture2D = ForgeArt.ACTORS.hero
+	var stride := 0.0
+	match state:
+		State.WINDUP:
+			pose = ForgeArt.HERO_WINDUP
+		State.ACTIVE, State.RECOVER:
+			pose = ForgeArt.HERO_STRIKE
+		State.IDLE:
+			if input.move_vector().length_squared() > 0.05:
+				pose = ForgeArt.HERO_RUN
+				stride = absf(sin(Time.get_ticks_msec() * 0.016)) * 3.0
+	# Struck: rock back for as long as the hit flash lasts.
+	var flinch := -0.18 * heading_screen.x * clampf(flash / 0.15, 0.0, 1.0) if state == State.HURT else 0.0
+	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride), flinch)
 	if has_shield and shield_in_front:
 		_draw_shield(shield_pos, state == State.BLOCK)
 	if state == State.GUARD_BREAK:
@@ -662,30 +712,13 @@ func _draw() -> void:
 		for i in 3:
 			var a := spin + i * TAU / 3.0
 			draw_circle(Vector2(0.0, -height - 8.0) + Vector2(cos(a), sin(a) * 0.4) * r * 0.9, 3.5, Color(1.0, 0.9, 0.3))
-	# Facing marker on top of the body.
-	var top := Vector2(0.0, -height)
-	var tip := top + Iso.to_screen(facing) * r * 0.8
-	draw_line(top, tip, Color(1, 1, 1), 3.0)
-	draw_circle(tip, 3.0, Color(1, 1, 1))
-	_draw_weapon(height * 0.55, attacking)
+	_draw_weapon(height * 0.48, attacking)
 	if cue_left > 0.0:
 		var cue_pos := Vector2(-110.0, -height - 28.0)
 		draw_string(ThemeDB.fallback_font, cue_pos + Vector2(1.0, 2.0), cue_text,
 				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, Color(0.0, 0.0, 0.0, 0.95))
 		draw_string(ThemeDB.fallback_font, cue_pos, cue_text,
 				HORIZONTAL_ALIGNMENT_CENTER, 220.0, 26, cue_color)
-
-
-func _draw_roll(r: float, tint: Color) -> void:
-	var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
-	var forward := Iso.to_screen(dodge_dir).normalized()
-	var center := Vector2(0.0, -r * 0.8)
-	draw_circle(center, r * 0.88, tint)
-	draw_arc(center, r * 0.88, 0.0, TAU, 24, Color(0.05, 0.1, 0.25), 2.0)
-	var seam := forward * (cos(progress * TAU) * r * 0.72)
-	draw_line(center - seam, center + seam, Color(0.78, 0.88, 1.0), 3.0)
-	draw_circle(center + forward * (sin(progress * TAU) * r * 0.57), r * 0.27,
-			Color(0.78, 0.88, 1.0))
 
 
 ## Screen-space centre of the shield: raised in front of the body, or carried at its left side.
@@ -697,22 +730,14 @@ func _shield_offset(height: float) -> Vector2:
 
 
 func _draw_shield(center: Vector2, raised: bool) -> void:
-	var k := 1.0 if raised else 0.8
-	var w := radius * 1.15 * k
-	var h := radius * 1.5 * k
-	var body := PackedVector2Array([
-		center + Vector2(-w, -h), center + Vector2(w, -h), center + Vector2(w, h * 0.1),
-		center + Vector2(0.0, h * 1.1), center + Vector2(-w, h * 0.1)])
-	var face := Color(0.62, 0.68, 0.8)
+	var h := radius * (2.7 if raised else 2.2)
+	var w := h * float(ForgeArt.SHIELD.get_width()) / ForgeArt.SHIELD.get_height()
+	var tint := Color.WHITE
 	if parry_flash > 0.0:
-		face = Color(1.0, 0.85, 0.3)
+		tint = Color(1.5, 1.32, 0.72)
 	elif block_flash > 0.0:
-		face = Color(1, 1, 1)
-	draw_colored_polygon(body, face)
-	var outline := body.duplicate()
-	outline.append(body[0])
-	draw_polyline(outline, Color(0.15, 0.18, 0.3), 2.5)
-	draw_circle(center + Vector2(0.0, -h * 0.1), w * 0.3, Color(0.35, 0.4, 0.55))
+		tint = Color(1.42, 1.42, 1.42)
+	draw_texture_rect(ForgeArt.SHIELD, Rect2(center - Vector2(w, h) * 0.5, Vector2(w, h)), false, tint)
 
 
 func _draw_weapon(anchor_height: float, attacking: bool) -> void:
@@ -720,12 +745,11 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 		# Bare guard: the weapon is held across the body.
 		var c := Vector2(0.0, -anchor_height) + Iso.to_screen(facing) * radius * 1.0
 		var half := Iso.to_screen(facing.rotated(PI * 0.5)).normalized() * (radius + weapon.length) * 0.55
-		draw_line(c - half, c + half, weapon.color, weapon.thickness + 1.0)
+		ForgeArt.weapon(self, weapon.id, c - half, c + half)
 		return
 	var base := facing.angle()
 	var ang := base + 0.6
 	var length := radius + weapon.length
-	var width := weapon.thickness
 	if attacking:
 		var half := deg_to_rad(cur_attack.arc) * 0.5
 		ang = base
@@ -738,10 +762,9 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 				ang = base + half
 		if cur_attack.heavy:
 			length += 8.0
-			width += 2.0
 	var angles: Array = [ang - 0.35, ang + 0.35] if weapon.dual else [ang]
 	var anchor := Vector2(0.0, -anchor_height)
 	for blade_angle in angles:
 		var dir := Vector2.from_angle(blade_angle)
-		draw_line(anchor + Iso.to_screen(dir) * radius * 0.6, anchor + Iso.to_screen(dir) * length,
-				weapon.color, width)
+		ForgeArt.weapon(self, weapon.id, anchor + Iso.to_screen(dir) * radius * 0.6,
+				anchor + Iso.to_screen(dir) * length)

@@ -12,8 +12,11 @@ signal controls_requested
 var _title: Label
 var _reason: Label
 var _legend: Label
+var _pickups: Label
 var _resume: Button
 var _fullscreen: Button
+var _shake: Button
+var _volume: Button
 var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 var _hold_for_heavy := false
 
@@ -31,7 +34,7 @@ func _ready() -> void:
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
+	box.add_theme_constant_override("separation", 8)
 	center.add_child(box)
 
 	_title = _label(48)
@@ -48,11 +51,27 @@ func _ready() -> void:
 	_button("Controls", box).pressed.connect(func(): controls_requested.emit())
 	_fullscreen = _button("", box)
 	_fullscreen.pressed.connect(toggle_fullscreen)
+	_shake = _button("", box)
+	_shake.pressed.connect(func():
+		GameSettings.toggle_shake()
+		_refresh())
+	_volume = _button("", box)
+	_volume.pressed.connect(func():
+		GameSettings.cycle_volume()
+		_refresh())
 	_button("Quit to desktop", box).pressed.connect(func(): quit_requested.emit())
 
 	_legend = _label(18)
 	_legend.modulate = Color(1, 1, 1, 0.65)
 	box.add_child(_legend)
+
+	# Run pickups, in a column to the right of the buttons.
+	_pickups = Label.new()
+	_pickups.add_theme_font_size_override("font_size", 17)
+	_pickups.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_pickups.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pickups.visible = false
+	add_child(_pickups)
 	_refresh()
 
 
@@ -84,6 +103,24 @@ func set_prompt_style(style: InputPrompts.Style, hold_for_heavy: bool) -> void:
 func layout(vp: Vector2) -> void:
 	position = Vector2.ZERO
 	size = vp
+	if _pickups != null:
+		_pickups.position = Vector2(vp.x * 0.5 + 220.0, 150.0)
+		_pickups.size = Vector2(maxf(120.0, vp.x * 0.5 - 250.0), vp.y - 200.0)
+
+
+## What the player carries this run, each with what it does. Empty hides the column.
+func set_pickups(ids: PackedStringArray, vow_ids := PackedStringArray()) -> void:
+	if _pickups == null:
+		return
+	var lines: PackedStringArray = ["THIS RUN"]
+	for id in ids:
+		if Boon.exists(id):
+			lines.append("%s\n   %s" % [Boon.title(id), Boon.text(id)])
+	for id in vow_ids:
+		if Vow.exists(id):
+			lines.append("%s\n   %s" % [Vow.title(id), Vow.text(id)])
+	_pickups.text = "\n".join(lines)
+	_pickups.visible = lines.size() > 1
 
 
 func _process(_delta: float) -> void:
@@ -96,6 +133,8 @@ func _refresh() -> void:
 	_legend.text = "%s      %s: resume\n%s" % [InputPrompts.menu_hint(_style),
 			InputPrompts.back(_style), InputPrompts.combat_line(_style, _hold_for_heavy)]
 	_fullscreen.text = "Fullscreen: ON" if _is_fullscreen() else "Fullscreen: OFF"
+	_shake.text = GameSettings.shake_label()
+	_volume.text = GameSettings.volume_label()
 
 
 func _is_fullscreen() -> bool:
@@ -119,8 +158,8 @@ func _label(font_size: int) -> Label:
 func _button(text: String, parent: Container) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.custom_minimum_size = Vector2(340, 58)
-	b.add_theme_font_size_override("font_size", 26)
+	b.custom_minimum_size = Vector2(340, 44)
+	b.add_theme_font_size_override("font_size", 22)
 	UiFocus.style(b)
 	var wrap := CenterContainer.new()
 	wrap.add_child(b)
