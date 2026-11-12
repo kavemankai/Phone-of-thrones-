@@ -14,7 +14,7 @@ var _shake_left := 0.0
 var _shake_total := 0.0
 var _shake_power := 0.0
 var _clock := 0.0
-## Each mark: {pos, age, life, tint, size, ring}.
+## Each mark: {pos, age, life, tint, size, ring, dust?}.
 var _marks: Array[Dictionary] = []
 
 
@@ -49,9 +49,18 @@ func ring(pos: Vector2, tint: Color, size := 60.0, life := 0.32) -> void:
 	_add({"pos": pos, "age": 0.0, "life": life, "tint": tint, "size": size, "ring": true})
 
 
+## A restrained ground-space dust puff for rolls and scuffed steps. Never affects physics.
+func dust(pos: Vector2, size := 18.0, life := 0.27) -> void:
+	_add({"pos": pos, "age": 0.0, "life": life,
+			"tint": Color(0.70, 0.62, 0.49, 0.36), "size": size,
+			"ring": false, "dust": true})
+
+
 func clear() -> void:
 	hitstop = 0.0
 	_shake_left = 0.0
+	_shake_total = 0.0
+	_shake_power = 0.0
 	_marks.clear()
 	queue_redraw()
 
@@ -96,13 +105,23 @@ func _draw() -> void:
 		tint.a *= 1.0 - progress
 		if mark["ring"]:
 			draw_set_transform(Vector2.ZERO)
-			draw_arc(pos, size * (0.35 + 0.65 * progress), 0.0, TAU, 40, tint, 4.0 * (1.0 - progress) + 1.0)
+			draw_arc(pos, size * (0.35 + 0.65 * progress), 0.0, TAU, 40,
+					tint, 4.0 * (1.0 - progress) + 1.0)
 			continue
-		# Upright, at about chest height.
+		if mark.get("dust", false):
+			draw_set_transform(Vector2.ZERO)
+			for i in 5:
+				var angle := TAU * float(i) / 5.0 + size * 0.025
+				var spread := size * (0.18 + progress * 0.72)
+				var puff := pos + Vector2(cos(angle), sin(angle)) * spread
+				draw_circle(puff, size * (0.13 + 0.15 * progress), tint)
+			continue
+		# Sparks rotate slightly over their lifetime; previously their angle was frozen
+		# because the formula used the constant lifetime instead of the elapsed age.
 		draw_set_transform_matrix(Transform2D(0.0, pos) * Iso.upright())
 		var centre := Vector2(0.0, -24.0)
 		for i in 7:
-			var angle := TAU * float(i) / 7.0 + float(mark["life"]) * 9.0
+			var angle := TAU * float(i) / 7.0 + float(mark["age"]) * 9.0
 			var dir := Vector2(cos(angle), sin(angle))
 			draw_line(centre + dir * size * (0.25 + 0.55 * progress),
 					centre + dir * size * (0.55 + 0.75 * progress), tint, 2.5)
