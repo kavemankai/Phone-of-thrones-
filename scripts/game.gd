@@ -162,7 +162,9 @@ func _ready() -> void:
 	hero.hit_landed.connect(func(e: Enemy, heavy: bool):
 		sfx.play("hit")
 		_fx_hit_landed(e, heavy))
-	hero.dodged.connect(func(): sfx.play("dodge"))
+	hero.dodged.connect(func():
+		sfx.play("dodge")
+		fx.dust(hero.position, 27.0))
 	hero.damaged.connect(func():
 		sfx.play("hurt")
 		_count_hit()
