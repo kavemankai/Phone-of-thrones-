@@ -7,12 +7,20 @@ const FOE_NAMES := {
 	"guard": "Gate Guard", "pike": "Pike Sentinel",
 	"hound": "War Hound", "sweeper": "Hall Sweeper",
 	"warden": "Iron Warden", "penitent": "Chain Penitent",
-	"herald": "War Herald", "gate_captain": "Gate Captain",
+	"herald": "War Herald", "gate_captain": "Gate Captain", "crown_tyrant": "Crown Tyrant",
+	# Veterans: the kind's name with "!" on the end.
+	"guard!": "Veteran Guard", "pike!": "Veteran Pike", "hound!": "Alpha Hound",
+	"warden!": "Warden Champion", "penitent!": "Flagellant", "herald!": "High Herald",
 }
+const ELITE_HEALTH_MULT := 1.6
+## The vows an Oathbound run begins with.
+const OATHBOUND_VOWS: Array[String] = [Vow.IRON, Vow.FRAILTY]
 ## Which room table a run walks. The slice is the original three-room test (ROOMS below);
 ## a ward is a full table from WardData.
 const PLAN_SLICE := "slice"
 const PLAN_OUTER_WALLS := "outer_walls"
+## The full ten rooms: the Outer Walls, then the Inner Keep.
+const PLAN_FORTRESS := "fortress"
 const ROOMS := [
 	[
 		{"name": "Shattered Gatehouse", "size": Vector2(340, 380), "ground": Color(0.19, 0.18, 0.17), "light": Color(0.62, 0.57, 0.46),
@@ -44,6 +52,10 @@ var boons := PackedStringArray()
 ## Fixed when the run starts. Decides which pickup each door offers, so a reloaded run
 ## shows the same doors.
 var run_seed := 0
+## Vows sworn so far (Vow ids), in the order taken.
+var vows := PackedStringArray()
+## An Oathbound run: it starts with OATHBOUND_VOWS already sworn.
+var hard := false
 var plan := PLAN_SLICE
 ## Run totals for the ending screen. They count every attempt, including rooms retried.
 var time := 0.0
@@ -52,7 +64,12 @@ var parries := 0
 
 
 static func table_for(plan_id: String) -> Array:
-	return WardData.OUTER_WALLS if plan_id == PLAN_OUTER_WALLS else ROOMS
+	match plan_id:
+		PLAN_OUTER_WALLS:
+			return WardData.OUTER_WALLS
+		PLAN_FORTRESS:
+			return WardData.fortress()
+	return ROOMS
 
 
 func table() -> Array:
@@ -64,7 +81,17 @@ func stage_count() -> int:
 
 
 func title() -> String:
-	return WardData.OUTER_WALLS_TITLE if plan == PLAN_OUTER_WALLS else "Fortress slice"
+	match plan:
+		PLAN_OUTER_WALLS:
+			return WardData.OUTER_WALLS_TITLE
+		PLAN_FORTRESS:
+			return WardData.FORTRESS_TITLE
+	return "Fortress slice"
+
+
+## A real run (pickups, vows, prompts), as opposed to the original three-room slice.
+func is_ward_run() -> bool:
+	return plan == PLAN_OUTER_WALLS or plan == PLAN_FORTRESS
 
 
 func room() -> Dictionary:
@@ -108,10 +135,17 @@ func advance(choice: int, current_hp: float, max_hp: float) -> void:
 		return
 	choice = clampi(choice, 0, doors.size() - 1)
 	var next_room: Dictionary = table()[stage + 1][doors[choice]]
+	# Work out everything this door gives before any of it changes the run.
 	var gained := offer(choice)
+	var sworn := vow_offer(choice)
+	var extra := bonus_offer(choice)
 	if gained != "":
 		boons.append(gained)
-	hp = minf(max_hp, current_hp + float(next_room.heal))
+	if sworn != "":
+		vows.append(sworn)
+		if extra != "":
+			boons.append(extra)
+	hp = minf(max_hp, current_hp + door_heal(choice))
 	guard_bonus = mini(16, guard_bonus + guard_reward(choice))
 	stage += 1
 	variant = doors[choice]
@@ -134,6 +168,61 @@ func offer(choice: int) -> String:
 	var first := rng.randi_range(0, pool.size() - 1)
 	var second := (first + 1 + rng.randi_range(0, pool.size() - 2)) % pool.size()
 	return pool[first if choice == 0 else second]
+
+
+## Makes this a harder run from its first room. Call before the first save.
+func swear_oathbound() -> void:
+	hard = true
+	for id in OATHBOUND_VOWS:
+		if not vows.has(id):
+			vows.append(id)
+
+
+func has_vow(id: String) -> bool:
+	return vows.has(id)
+
+
+## Health given by a door, after vows.
+func door_heal(choice: int) -> float:
+	var behind := choices()
+	if choice < 0 or choice >= behind.size() or has_vow(Vow.FASTING):
+		return 0.0
+	return float(behind[choice].heal)
+
+
+## The vow sworn by taking a door, or "" for a plain door. Wards only. At most one of a
+## room's two doors carries one, decided by the run seed, and never a vow already sworn.
+func vow_offer(choice: int) -> String:
+	if not is_ward_run() or door_variants().is_empty():
+		return ""
+	var pool: PackedStringArray = []
+	for id: String in Vow.ALL:
+		if not vows.has(id):
+			pool.append(id)
+	if pool.is_empty():
+		return ""
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([run_seed, stage, "vow"])
+	var door := rng.randi_range(0, 1)
+	var offered := rng.randf() < Vow.OFFER_CHANCE
+	var pick := rng.randi_range(0, pool.size() - 1)
+	return pool[pick] if offered and choice == door else ""
+
+
+## The second pickup that comes with a door's vow: one not owned and not on either door.
+func bonus_offer(choice: int) -> String:
+	if vow_offer(choice) == "":
+		return ""
+	var taken := [offer(0), offer(1)]
+	var pool: PackedStringArray = []
+	for id: String in Boon.ALL:
+		if not boons.has(id) and not taken.has(id):
+			pool.append(id)
+	if pool.is_empty():
+		return ""
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([run_seed, stage, "bonus"])
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 
 func boon_set() -> Dictionary:
@@ -159,6 +248,8 @@ func save() -> Error:
 	file.set_value("run", "boons", boons)
 	file.set_value("run", "seed", run_seed)
 	file.set_value("run", "plan", plan)
+	file.set_value("run", "vows", vows)
+	file.set_value("run", "hard", hard)
 	file.set_value("run", "stats", [time, hits_taken, parries])
 	var temp := CHECKPOINT + ".tmp"
 	var error := file.save(temp)
@@ -179,7 +270,7 @@ static func read() -> CampaignRun:
 		return null
 	# Older checkpoints have no plan: they are slice runs.
 	var saved_plan: Variant = file.get_value("run", "plan", PLAN_SLICE)
-	if not saved_plan is String or saved_plan not in [PLAN_SLICE, PLAN_OUTER_WALLS]:
+	if not saved_plan is String or saved_plan not in [PLAN_SLICE, PLAN_OUTER_WALLS, PLAN_FORTRESS]:
 		return null
 	var rooms := table_for(saved_plan)
 	if entry[0] < 0 or entry[0] >= rooms.size() or entry[1] < 0 or entry[1] >= rooms[entry[0]].size():
@@ -199,8 +290,19 @@ static func read() -> CampaignRun:
 		return null
 	# Pickups were added after the first checkpoints: a file without them is a run with none.
 	var saved_boons: Variant = file.get_value("run", "boons", PackedStringArray())
-	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0]:
+	# A door gives one pickup, or two with a vow.
+	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0] * 2:
 		return null
+	var saved_hard: Variant = file.get_value("run", "hard", false)
+	if not saved_hard is bool:
+		return null
+	var vow_limit: int = entry[0] + (OATHBOUND_VOWS.size() if saved_hard else 0)
+	var saved_vows: Variant = file.get_value("run", "vows", PackedStringArray())
+	if not saved_vows is PackedStringArray or saved_vows.size() > vow_limit:
+		return null
+	for i in saved_vows.size():
+		if not Vow.exists(saved_vows[i]) or saved_vows.slice(0, i).has(saved_vows[i]):
+			return null
 	for i in saved_boons.size():
 		if not Boon.exists(saved_boons[i]) or saved_boons.slice(0, i).has(saved_boons[i]):
 			return null
@@ -209,6 +311,8 @@ static func read() -> CampaignRun:
 		return null
 	var result := CampaignRun.new()
 	result.boons = saved_boons
+	result.vows = saved_vows
+	result.hard = saved_hard
 	result.run_seed = saved_seed
 	result.plan = saved_plan
 	var stats: Variant = file.get_value("run", "stats", null)
@@ -233,6 +337,14 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 	var profile := EnemyProfile.grunt_from(t)
 	profile.display_name = FOE_NAMES[kind]
 	profile.max_hp += 3.0 * stage_index
+	var veteran := kind.ends_with("!")
+	var base := kind.trim_suffix("!")
+	if veteran:
+		# The match below fills in the ordinary kind; the veteran's twist goes on top.
+		profile = enemy_profile(base, t, stage_index)
+		profile.display_name = FOE_NAMES[kind]
+		_make_elite(profile, base)
+		return profile
 	match kind:
 		"pike":
 			profile.id = "pike"
@@ -310,6 +422,52 @@ static func enemy_profile(kind: String, t: Tuning, stage_index: int) -> EnemyPro
 	return profile
 
 
+## Turns an ordinary profile into its veteran: more health and one change to how it fights.
+static func _make_elite(profile: EnemyProfile, base: String) -> void:
+	profile.elite = true
+	profile.max_hp = roundf(profile.max_hp * ELITE_HEALTH_MULT)
+	profile.bar_width += 12.0
+	var moves: Array[AttackDef] = []
+	match base:
+		"guard", "hound":
+			# Strikes twice: a short recovery, then a faster second blow.
+			var first := profile.attacks[0].duplicate() as AttackDef
+			var second := profile.attacks[0].duplicate() as AttackDef
+			first.recover = 0.18
+			first.chain_to = 1
+			second.windup *= 0.6
+			moves.append(first)
+			moves.append(second)
+		"pike":
+			# A quicker, longer thrust.
+			var thrust := profile.attacks[0].duplicate() as AttackDef
+			thrust.windup *= 0.8
+			thrust.reach += 14.0
+			thrust.max_range += 12.0
+			moves.append(thrust)
+		"warden":
+			# A wider shield and less time with it down.
+			profile.front_guard_arc = 170.0
+			var bash := profile.attacks[0].duplicate() as AttackDef
+			bash.recover = 0.9
+			moves.append(bash)
+		"penitent":
+			# A third sweep.
+			var middle := profile.attacks[1].duplicate() as AttackDef
+			middle.recover = 0.25
+			middle.chain_to = 2
+			var last := profile.attacks[1].duplicate() as AttackDef
+			moves.append(profile.attacks[0])
+			moves.append(middle)
+			moves.append(last)
+		"herald":
+			# A wider ring that speeds its allies more.
+			profile.aura_range = 135.0
+			profile.aura_speed_mult = 1.5
+	if not moves.is_empty():
+		profile.attacks = moves
+
+
 ## The ward boss: the captain, with more health and a second phase at half health that
 ## moves faster and adds a full-circle whirl. `base` is never edited.
 static func boss_profile(base: EnemyProfile) -> EnemyProfile:
@@ -332,6 +490,41 @@ static func boss_profile(base: EnemyProfile) -> EnemyProfile:
 		second_phase.append(index)
 	second_phase.append(whirl_index)
 	profile.phase2_pattern = second_phase
+	return profile
+
+
+## The final boss: built on the Gate Captain's moves, with more health, a guard-breaking
+## overhead blow, and a second phase that is faster and calls hounds (see Game).
+static func tyrant_profile(base: EnemyProfile) -> EnemyProfile:
+	var profile := boss_profile(base)
+	profile.id = "crown_tyrant"
+	profile.display_name = FOE_NAMES["crown_tyrant"]
+	profile.max_hp = 270.0
+	profile.speed = base.speed * 1.08
+	var breaker := AttackDef.make("Crown breaker", 30.0, 82.0, 60.0, 1.10, 0.12, 1.20)
+	breaker.max_range = 76.0
+	breaker.lock_time = 0.3
+	breaker.guard_cost_mult = 2.0
+	breaker.breaks_bare_guard = true
+	var moves: Array[AttackDef] = []
+	moves.assign(profile.attacks)
+	var whirl_index := moves.size() - 1
+	var breaker_index := moves.size()
+	moves.append(breaker)
+	profile.attacks = moves
+	# First phase: the captain's own pattern with the breaker in it.
+	var first_phase := PackedInt32Array()
+	for index in base.pattern:
+		first_phase.append(index)
+	first_phase.append(breaker_index)
+	profile.pattern = first_phase
+	var second_phase := PackedInt32Array([whirl_index, breaker_index])
+	for index in base.pattern:
+		second_phase.append(index)
+	second_phase.append(whirl_index)
+	profile.phase2_pattern = second_phase
+	profile.phase2_at = 0.5
+	profile.phase2_speed_mult = 1.25
 	return profile
 
 

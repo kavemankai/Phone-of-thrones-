@@ -67,6 +67,11 @@ var _clear_delay := 0.0
 var _waves_left: Array = []
 ## Seconds left to show the "reinforcements" banner.
 var wave_notice := 0.0
+## Groups called in mid-fight (the Tyrant's second phase). They enter on the next step, so
+## nothing is added to the enemy list while a strike is still being resolved.
+var _summons: Array = []
+## The run that just ended set a new best time.
+var _new_best := false
 ## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
 var _vents: Array[Rect2] = []
 var _vent_burned: Dictionary = {}
@@ -86,6 +91,10 @@ var _map_room := 0
 var _view_size := Vector2(400, 400)
 var _view_centre := Vector2.ZERO
 var _view_scale := 1.0
+## First-room control prompts: 0 move, 1 attack, 2 roll, 3 guard, 4 finished.
+const TUTORIAL_STEPS := 4
+var tutorial_step := 0
+var _tutorial_moved := 0.0
 var _test_room_size := Vector2(340, 380)
 ## Pause is a flag on top of FIGHTING, so the fight state underneath is untouched.
 var paused := false
@@ -106,6 +115,7 @@ var hud: CombatHud
 var menu: MenuPanel
 var pause_panel: PausePanel
 var bindings_panel: BindingsPanel
+var ending_panel: EndingPanel
 var _bindings_return_panel: Control
 var _bindings_return_focus: Control
 var sfx: Sfx
@@ -117,6 +127,8 @@ var _arena_origin := Vector2.ZERO
 func _ready() -> void:
 	InputActions.ensure()
 	GameSettings.ensure_loaded()
+	if GameSettings.tutorial_done:
+		tutorial_step = TUTORIAL_STEPS
 	touch_ui = OS.has_feature("mobile")
 	# A private copy, so changing values at runtime (tests) never edits the shared resource.
 	var loaded := load(TUNING_PATH) as Tuning
@@ -158,13 +170,16 @@ func _ready() -> void:
 	iso_layer.add_child(hero)
 	fx = CombatFx.new()
 	iso_layer.add_child(fx)
-	hero.swung.connect(func(heavy: bool): sfx.play("swing_heavy" if heavy else "swing_light"))
+	hero.swung.connect(func(heavy: bool):
+		sfx.play("swing_heavy" if heavy else "swing_light")
+		_tutorial_did(1))
 	hero.hit_landed.connect(func(e: Enemy, heavy: bool):
 		sfx.play("hit")
 		_fx_hit_landed(e, heavy))
 	hero.dodged.connect(func():
 		sfx.play("dodge")
-		fx.dust(hero.position, 27.0))
+		fx.dust(hero.position, 27.0)
+		_tutorial_did(2))
 	hero.damaged.connect(func():
 		sfx.play("hurt")
 		_count_hit()
@@ -208,7 +223,8 @@ func _ready() -> void:
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
 	menu.campaign_requested.connect(func(w: int, sh: bool):
-		_new_campaign(w, sh, CampaignRun.PLAN_OUTER_WALLS))
+		_new_campaign(w, sh, CampaignRun.PLAN_FORTRESS, menu.hard_run))
+	menu.credits_requested.connect(_open_credits)
 	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
@@ -217,6 +233,9 @@ func _ready() -> void:
 	pause_panel.restart_requested.connect(_restart_room)
 	pause_panel.loadout_requested.connect(return_to_menu)
 	pause_panel.quit_requested.connect(func(): get_tree().quit())
+	ending_panel = EndingPanel.new()
+	ui.add_child(ending_panel)
+	ending_panel.closed.connect(_on_ending_closed)
 	bindings_panel = BindingsPanel.new()
 	ui.add_child(bindings_panel)
 	menu.controls_requested.connect(_open_bindings.bind(menu))
@@ -294,6 +313,9 @@ func _prepare_room(room_size: Vector2) -> void:
 	_release_all_input()
 	paused = false
 	_waves_left = []
+	_summons = []
+	_new_best = false
+	ending_panel.visible = false
 	wave_notice = 0.0
 	_vents.clear()
 	_vent_burned.clear()
@@ -309,6 +331,7 @@ func _prepare_room(room_size: Vector2) -> void:
 	_map_room = 0
 	hero.nav_override = false
 	hero.nav_cover.clear()
+	hero.nav_waypoints.clear()
 	arena_view.tiles.clear()
 	arena_view.walls.clear()
 	arena_view.locked_gates.clear()
@@ -338,6 +361,10 @@ func _prepare_room(room_size: Vector2) -> void:
 	hero.equip(weapon(), shield_on)
 	hero.run_guard_bonus = float(campaign.guard_bonus) if campaign != null else 0.0
 	hero.boons = campaign.boon_set() if campaign != null else {}
+	hero.damage_taken_mult = Vow.FRAILTY_DAMAGE_MULT \
+			if campaign != null and campaign.has_vow(Vow.FRAILTY) else 1.0
+	controller.max_commits = tuning.max_commits + (Vow.FURY_EXTRA_ATTACKERS
+			if campaign != null and campaign.has_vow(Vow.FURY) else 0)
 	hero.reset(tuning.hero_spawn())
 	captain_spawned = false
 	intermission_active = false
@@ -345,6 +372,7 @@ func _prepare_room(room_size: Vector2) -> void:
 
 
 func _begin_room() -> void:
+	arena_view.rebuild_props(iso_layer)
 	match arena_view.room_style:
 		3:
 			sfx.set_bed("forge")
@@ -393,6 +421,50 @@ func _fx_blocked(parried: bool) -> void:
 		fx.hit_stop(0.03)
 
 
+## The first room of a ward teaches the controls one at a time, once per machine.
+func tutorial_showing() -> bool:
+	return tutorial_step < TUTORIAL_STEPS and state == State.FIGHTING and campaign != null \
+			and campaign.is_ward_run() and campaign.stage == 0
+
+
+## What to show for the current step, naming the buttons of the device in use.
+func tutorial_text() -> String:
+	var rows := InputPrompts.combat(prompt_style, not split_attacks)
+	# Pad rows are move, aim, light, heavy, roll, guard; the keyboard has no aim row.
+	var shift := 1 if prompt_style != InputPrompts.Style.KEYBOARD else 0
+	match tutorial_step:
+		0:
+			return "Move with %s" % rows[0][0]
+		1:
+			return "%s light attack      %s heavy attack" % [rows[1 + shift][0], rows[2 + shift][0]]
+		2:
+			return "%s rolls through an attack" % rows[3 + shift][0]
+		3:
+			return "Hold %s to guard. Raise it just before a hit to parry." % rows[4 + shift][0]
+	return ""
+
+
+func _tutorial_did(step: int) -> void:
+	if tutorial_showing() and tutorial_step == step:
+		tutorial_step += 1
+		if tutorial_step >= TUTORIAL_STEPS:
+			GameSettings.tutorial_done = true
+			GameSettings.save()
+
+
+## Steps that have no signal of their own: walking for half a second, and raising the guard.
+func _tutorial_watch(delta: float) -> void:
+	if not tutorial_showing():
+		return
+	if tutorial_step == 0:
+		if input.move_vector().length() > 0.5:
+			_tutorial_moved += delta
+		if _tutorial_moved >= 0.5:
+			_tutorial_did(0)
+	elif tutorial_step == 3 and hero.is_guarding():
+		_tutorial_did(3)
+
+
 func _count_hit() -> void:
 	if campaign != null and state == State.FIGHTING:
 		campaign.hits_taken += 1
@@ -405,9 +477,11 @@ func _count_parry(parried: bool) -> void:
 
 ## Starts a run. The menu starts the first ward; the default is the original three-room
 ## slice, kept so its checks still describe what they were written for.
-func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE) -> void:
+func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE, oathbound := false) -> void:
 	campaign = CampaignRun.new()
 	campaign.plan = plan
+	if oathbound:
+		campaign.swear_oathbound()
 	campaign.weapon_index = w
 	campaign.shield = shield
 	campaign.split = menu.split_attacks
@@ -458,18 +532,41 @@ func _start_campaign_room() -> void:
 
 func _spawn_group(kinds: Array, spots: Array[Vector2]) -> void:
 	for i in mini(kinds.size(), spots.size()):
-		_add_enemy(spots[i], enemies.size(), _campaign_profile(kinds[i]))
+		var kind := String(kinds[i])
+		# Vow of Veterans: the first of each group is its veteran, where the kind has one.
+		if i == 0 and campaign != null and campaign.has_vow(Vow.VETERANS) \
+				and CampaignRun.FOE_NAMES.has(kind + "!"):
+			kind += "!"
+		_add_enemy(spots[i], enemies.size(), _campaign_profile(kind))
 
 
 func _campaign_profile(kind: String) -> EnemyProfile:
 	if kind == "gate_captain" and captain_profile != null:
 		return CampaignRun.boss_profile(captain_profile)
-	return CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+	if kind == "crown_tyrant" and captain_profile != null:
+		return CampaignRun.tyrant_profile(captain_profile)
+	var profile := CampaignRun.enemy_profile(kind, tuning, campaign.stage)
+	if campaign.has_vow(Vow.IRON):
+		profile.max_hp = roundf(profile.max_hp * Vow.IRON_HEALTH_MULT)
+	return profile
 
 
 ## The next group enters from whichever end of the room is farther from the hero.
+## A boss crossing into its second phase: a ring, a long freeze, a hard shake. The Crown
+## Tyrant also calls two hounds, which enter on the next step.
+func _on_phase_changed(e: Enemy) -> void:
+	fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
+	fx.hit_stop(0.15)
+	fx.shake(8.0, 0.4)
+	if e.profile.id == "crown_tyrant":
+		_summons.append(["hound", "hound"])
+
+
 func _spawn_next_wave() -> void:
-	var kinds: Array = _waves_left.pop_front()
+	_spawn_far_group(_waves_left.pop_front())
+
+
+func _spawn_far_group(kinds: Array) -> void:
 	var spots := tuning.enemy_spawns()
 	var far_end := tuning.hero_spawn()
 	if far_end.distance_to(hero.position) > spots[0].distance_to(hero.position):
@@ -589,6 +686,9 @@ func _refresh_map_cover() -> void:
 	hero.arena_cover.assign(solid)
 	hero.nav_override = true
 	hero.nav_cover.assign(_map_props[_map_room])
+	hero.nav_waypoints.clear()
+	for gate in opened:
+		hero.nav_waypoints.append(gate.get_center())
 	arena_view.walls.assign(_map_walls)
 	arena_view.locked_gates.assign(locked)
 	arena_view.open_gates.assign(opened)
@@ -652,10 +752,7 @@ func _add_enemy(pos: Vector2, idx: int, profile: EnemyProfile) -> Enemy:
 	e.setup(tuning, controller, hero, tuning.arena_size, idx, profile)
 	e.position = pos
 	e.struck.connect(func(): sfx.play("enemy_strike"))
-	e.phase_changed.connect(func():
-		fx.ring(e.position, Color(1.0, 0.6, 0.25), 110.0, 0.5)
-		fx.hit_stop(0.15)
-		fx.shake(8.0, 0.4))
+	e.phase_changed.connect(_on_phase_changed.bind(e))
 	iso_layer.add_child(e)
 	enemies.append(e)
 	return e
@@ -710,6 +807,8 @@ func _sim_step(dt: float) -> void:
 	if map_active:
 		_step_map()
 	_resolve_overlaps(dt)
+	while not _summons.is_empty() and campaign != null:
+		_spawn_far_group(_summons.pop_front())
 	_step_vents()
 	input.end_step()
 	if intermission_active:
@@ -775,6 +874,8 @@ func _check_outcome() -> void:
 			if CampaignRun.read() != null:
 				var error := DirAccess.remove_absolute(CampaignRun.CHECKPOINT)
 				checkpoint_message = "" if error == OK else "Could not close the checkpoint."
+			if campaign.plan == CampaignRun.PLAN_FORTRESS:
+				_new_best = RunRecords.note_win(weapon().display_name, campaign.time, campaign.hard)
 			_finish(Outcome.VICTORY)
 		else:
 			_clear_delay = 0.55
@@ -832,6 +933,7 @@ func _process(delta: float) -> void:
 			if not _vents.is_empty():
 				arena_view.vent_time = fight_time
 				arena_view.queue_redraw()
+			_tutorial_watch(delta)
 			_poll_devices()
 			# Hit-stop: hold the fight for a few frames after an impact. Input is still read,
 			# and its press flags wait in CombatInput for the next step, so nothing is lost.
@@ -859,9 +961,42 @@ func _process(delta: float) -> void:
 				if result_timer <= 0.0:
 					if campaign == null:
 						menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
+					elif outcome == Outcome.VICTORY and campaign.plan == CampaignRun.PLAN_FORTRESS:
+						_show_fortress_ending()
 					else:
 						_show_campaign_result()
 					menu.set_continue_available(CampaignRun.read() != null)
+
+
+## The line of numbers for a finished run.
+func _run_totals() -> String:
+	var line := "Time %s      Hits taken %d      Parries %d" % [
+		RunRecords.clock(campaign.time), campaign.hits_taken, campaign.parries]
+	if campaign.hard:
+		line += "      Oathbound"
+	if _new_best:
+		line += "      New best time"
+	return line
+
+
+## After the final boss: the ending and credits first, then the usual result screen.
+func _show_fortress_ending() -> void:
+	ending_panel.layout(get_viewport().get_visible_rect().size)
+	ending_panel.show_ending(_run_totals())
+
+
+func _open_credits() -> void:
+	menu.hide()
+	ending_panel.layout(get_viewport().get_visible_rect().size)
+	ending_panel.show_credits()
+
+
+func _on_ending_closed() -> void:
+	if state == State.RESULT and campaign != null:
+		_show_campaign_result()
+		menu.set_continue_available(CampaignRun.read() != null)
+	else:
+		menu.show()
 
 
 func _show_campaign_result() -> void:
@@ -871,9 +1006,14 @@ func _show_campaign_result() -> void:
 		seconds / 60, seconds % 60, campaign.hits_taken, campaign.parries, campaign.run_seed]
 	var carried := Boon.titles(campaign.boons)
 	var pickups := "Pickups: " + (", ".join(carried) if not carried.is_empty() else "none")
+	if not campaign.vows.is_empty():
+		pickups += "\nVows: " + ", ".join(Vow.titles(campaign.vows))
 	if won:
-		var heading := "OUTER WALLS BREACHED" if campaign.plan == CampaignRun.PLAN_OUTER_WALLS \
-				else "SLICE COMPLETE"
+		var heading := "SLICE COMPLETE"
+		if campaign.plan == CampaignRun.PLAN_OUTER_WALLS:
+			heading = "OUTER WALLS BREACHED"
+		elif campaign.plan == CampaignRun.PLAN_FORTRESS:
+			heading = "THE FORTRESS HAS FALLEN"
 		menu.show_campaign_result(true, heading, "%s\n%s" % [totals, pickups])
 	else:
 		menu.show_campaign_result(false, "DEFEAT", "Checkpoint: %s  (room %d of %d)\n%s" % [
@@ -1019,7 +1159,8 @@ func pause_game(reason := "") -> void:
 	_guard_held_over_pause = false
 	input.clear()
 	_update_touch_controls()
-	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray())
+	pause_panel.set_pickups(campaign.boons if campaign != null else PackedStringArray(),
+			campaign.vows if campaign != null else PackedStringArray())
 	pause_panel.open(reason)
 
 

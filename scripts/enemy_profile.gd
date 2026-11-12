@@ -37,6 +37,8 @@ extends Resource
 @export var phase2_at := 0.0
 @export var phase2_pattern: PackedInt32Array = PackedInt32Array()
 @export var phase2_speed_mult := 1.0
+## A veteran: more health and one twist on the ordinary kind (see CampaignRun._make_elite).
+@export var elite := false
 @export var attacks: Array[AttackDef] = []
 ## Attack indices used in order, repeating. An entry is skipped when the hero is closer
 ## than that attack's min_range.

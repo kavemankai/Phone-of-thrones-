@@ -55,7 +55,7 @@ const OUTER_WALLS := [
 			"foes": ["penitent", "pike", "hound"], "heal": 25},
 		{"name": "Hall of Banners", "door": "Shield line", "size": Vector2(330, 450), "style": 2,
 			"ground": Color(0.20, 0.18, 0.20), "light": Color(0.58, 0.55, 0.62),
-			"foes": ["warden", "guard"], "heal": 15},
+			"foes": ["warden", "guard!"], "heal": 15},
 	],
 	[
 		{"name": "Cinder Forge", "door": "Bellows", "size": Vector2(380, 360), "style": 3,
@@ -75,6 +75,73 @@ const OUTER_WALLS := [
 			"foes": ["gate_captain"], "heal": 20},
 	],
 ]
+
+
+## Rooms 6 to 10: the same five arenas after dark, with harder groups, veterans, more second
+## waves, and the Crown Tyrant at the end.
+const INNER_KEEP := [
+	[
+		{"name": "Shattered Gatehouse", "door": "Night watch", "size": Vector2(340, 380), "style": 0,
+			"ground": Color(0.12, 0.13, 0.18), "light": Color(0.45, 0.52, 0.72),
+			"cover": _GATE_COVER, "foes": ["pike!", "guard", "guard"], "heal": 15},
+		{"name": "Shattered Gatehouse", "door": "Murder hole", "size": Vector2(340, 380), "style": 0,
+			"ground": Color(0.13, 0.12, 0.17), "light": Color(0.52, 0.48, 0.70),
+			"cover": _GATE_COVER, "foes": ["warden", "pike"], "waves": [["hound", "hound"]], "heal": 25},
+		{"name": "Shattered Gatehouse", "door": "Signal post", "size": Vector2(340, 380), "style": 0,
+			"ground": Color(0.11, 0.14, 0.17), "light": Color(0.42, 0.60, 0.70),
+			"cover": _GATE_COVER, "foes": ["guard!", "pike", "herald"], "heal": 20},
+	],
+	[
+		{"name": "Blood Kennels", "door": "The pack", "size": Vector2(365, 325), "style": 1,
+			"ground": Color(0.16, 0.10, 0.12), "light": Color(0.70, 0.30, 0.34),
+			"cover": _KENNEL_COVER, "foes": ["hound!", "hound", "hound"], "heal": 20},
+		{"name": "Blood Kennels", "door": "Whipping post", "size": Vector2(365, 325), "style": 1,
+			"ground": Color(0.15, 0.11, 0.13), "light": Color(0.62, 0.34, 0.40),
+			"cover": _KENNEL_COVER, "foes": ["hound", "hound"], "waves": [["penitent", "hound"]], "heal": 25},
+		{"name": "Blood Kennels", "door": "Kennel master", "size": Vector2(365, 325), "style": 1,
+			"ground": Color(0.17, 0.11, 0.11), "light": Color(0.74, 0.36, 0.28),
+			"cover": _KENNEL_COVER, "foes": ["herald", "hound!", "pike"], "heal": 20},
+	],
+	[
+		{"name": "Hall of Banners", "door": "Torn standard", "size": Vector2(330, 450), "style": 2,
+			"ground": Color(0.14, 0.12, 0.17), "light": Color(0.50, 0.42, 0.66),
+			"foes": ["penitent!", "warden"], "heal": 20},
+		{"name": "Hall of Banners", "door": "Oath guard", "size": Vector2(330, 450), "style": 2,
+			"ground": Color(0.13, 0.13, 0.18), "light": Color(0.46, 0.48, 0.70),
+			"foes": ["warden!", "herald", "pike"], "heal": 25},
+		{"name": "Hall of Banners", "door": "Procession", "size": Vector2(330, 450), "style": 2,
+			"ground": Color(0.15, 0.12, 0.16), "light": Color(0.56, 0.40, 0.60),
+			"foes": ["penitent", "penitent"], "waves": [["guard!", "guard"]], "heal": 30},
+	],
+	[
+		{"name": "Cinder Forge", "door": "White heat", "size": Vector2(380, 360), "style": 3,
+			"ground": Color(0.13, 0.10, 0.12), "light": Color(1.0, 0.62, 0.32),
+			"cover": _FORGE_COVER, "vents": _FORGE_VENTS, "foes": ["warden!", "herald!"], "heal": 20},
+		{"name": "Cinder Forge", "door": "Slag run", "size": Vector2(380, 360), "style": 3,
+			"ground": Color(0.12, 0.10, 0.13), "light": Color(1.0, 0.52, 0.26),
+			"cover": _FORGE_COVER, "vents": _FORGE_VENTS, "foes": ["penitent!", "hound", "hound"],
+			"waves": [["pike!"]], "heal": 30},
+		{"name": "Cinder Forge", "door": "Quench pit", "size": Vector2(380, 360), "style": 3,
+			"ground": Color(0.14, 0.11, 0.12), "light": Color(0.96, 0.58, 0.36),
+			"cover": _FORGE_COVER, "vents": _FORGE_VENTS, "foes": ["herald", "warden", "penitent"],
+			"waves": [["hound!", "hound"]], "heal": 30},
+	],
+	[
+		{"name": "Crown Pit", "door": "The throne", "size": Vector2(400, 400), "style": 4,
+			"ground": Color(0.12, 0.09, 0.13), "light": Color(1.0, 0.45, 0.35),
+			"foes": ["crown_tyrant"], "heal": 30},
+	],
+]
+const FORTRESS_TITLE := "The Fortress"
+
+static var _fortress: Array = []
+
+
+## The whole run: the Outer Walls, then the Inner Keep. Ten rooms.
+static func fortress() -> Array:
+	if _fortress.is_empty():
+		_fortress = OUTER_WALLS + INNER_KEEP
+	return _fortress
 
 
 static func _vent_clock(index: int, fight_time: float) -> float:
