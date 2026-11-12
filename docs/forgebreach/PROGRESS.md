@@ -1,5 +1,12 @@
 # FORGEBREACH progress ledger
 
+### 2026-11-12 — Visual assets and animation polish (QA pending)
+- Working branch: `art/forgebreach-animation-polish-20261112`, based on the newer campaign branch, not the older default/prototype.
+- 34 art and 16 audio source files enumerated; their binary artwork/audio was not edited. Added imported-resource QA plus a complete scope/limitations record at `docs/forgebreach/VISUAL_AUDIT_2026-11-12.md`.
+- Presentation code: hero idle/run blending driven by measured travel, attack anticipation/follow-through, dodge afterimages, translucent weapon trails; enemy displacement-driven bobbing and action stretch; corrected rotating sparks, dodge dust and flickering single-room braziers.
+- **QA PENDING:** No in-chat Godot runtime or physical PC/controller testing. Existing combat state/timers and attack hitboxes intentionally unchanged. Merge only after CI and screenshot/playtest review.
+
+
 Updated 2026-11-10. This file is the durable checkpoint for handovers; distinguish implementation, automated evidence and physical verification.
 
 | Milestone | Status | Evidence / blocker |
