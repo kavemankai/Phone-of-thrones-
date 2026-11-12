@@ -7,6 +7,8 @@ const VOLUME_STEPS: Array[float] = [1.0, 0.75, 0.5, 0.25, 0.0]
 
 static var screen_shake := true
 static var volume := 1.0
+## The first-room control prompts have been completed once on this machine.
+static var tutorial_done := false
 static var _loaded := false
 
 
@@ -23,6 +25,9 @@ static func ensure_loaded() -> void:
 		var level: Variant = file.get_value("options", "volume", 1.0)
 		if level is float or level is int:
 			volume = clampf(level, 0.0, 1.0)
+		var taught: Variant = file.get_value("options", "tutorial_done", false)
+		if taught is bool:
+			tutorial_done = taught
 	apply_volume()
 
 
@@ -30,6 +35,7 @@ static func save() -> Error:
 	var file := ConfigFile.new()
 	file.set_value("options", "screen_shake", screen_shake)
 	file.set_value("options", "volume", volume)
+	file.set_value("options", "tutorial_done", tutorial_done)
 	return file.save(PATH)
 
 

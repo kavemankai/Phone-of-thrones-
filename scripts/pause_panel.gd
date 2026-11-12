@@ -109,14 +109,17 @@ func layout(vp: Vector2) -> void:
 
 
 ## What the player carries this run, each with what it does. Empty hides the column.
-func set_pickups(ids: PackedStringArray) -> void:
+func set_pickups(ids: PackedStringArray, vow_ids := PackedStringArray()) -> void:
 	if _pickups == null:
 		return
-	var lines: PackedStringArray = ["PICKUPS"]
+	var lines: PackedStringArray = ["THIS RUN"]
 	for id in ids:
 		if Boon.exists(id):
 			lines.append("%s\n   %s" % [Boon.title(id), Boon.text(id)])
-	_pickups.text = "\n\n".join(lines)
+	for id in vow_ids:
+		if Vow.exists(id):
+			lines.append("%s\n   %s" % [Vow.title(id), Vow.text(id)])
+	_pickups.text = "\n".join(lines)
 	_pickups.visible = lines.size() > 1
 
 

@@ -41,6 +41,7 @@ var locked_gates: Array[Rect2] = []
 var open_gates: Array[Rect2] = []
 ## Prop art for each entry of `cover` on a combined map (a room style per footprint).
 var cover_styles: Array[int] = []
+var _props: Array[PropSprite] = []
 
 
 func door_position(index: int) -> Vector2:
@@ -143,24 +144,27 @@ func _draw_block(base: Rect2, height: float, tint: Color) -> void:
 			tint.lightened(0.25), 1.5)
 
 
-func _draw_cover(footprint: Rect2, style: int) -> void:
+## The footprint only: the area that blocks. The art is a PropSprite on the iso layer, so
+## it sorts by depth with the characters (see rebuild_props).
+func _draw_cover(footprint: Rect2, _style: int) -> void:
 	draw_rect(footprint, Color(0.10, 0.08, 0.07, 0.84))
 	draw_rect(footprint, Color(room_light, 0.70), false, 2.0)
-	var texture: Texture2D = COVER_ART.get(style, COVER_ART[0])
-	# On screen the footprint is a diamond (x + y) wide and half that tall, centred on the
-	# footprint's centre. The prop keeps its painted proportions, is as wide as that diamond
-	# and stands with its base on the diamond's front corner, so the art covers the area
-	# that blocks movement. The anvil is drawn a little narrower than its block.
-	var fill := 0.85 if style == 3 else 1.0
-	var width := (footprint.size.x + footprint.size.y) * fill
-	var height := width * float(texture.get_height()) / float(texture.get_width())
-	# The props are painted running down to the right; mirror them for cover that is
-	# longer the other way.
-	var mirror := -1.0 if footprint.size.y > footprint.size.x else 1.0
-	draw_set_transform_matrix(Transform2D(0.0, footprint.get_center()) * Iso.upright()
-			* Transform2D(0.0, Vector2(mirror, 1.0), 0.0, Vector2.ZERO))
-	draw_texture_rect(texture, Rect2(-width * 0.5, -height + width * 0.25, width, height), false)
-	draw_set_transform(Vector2.ZERO)
+
+
+## Replaces the cover art nodes on `layer` to match `cover`. Call after cover changes.
+func rebuild_props(layer: Node) -> void:
+	for old in _props:
+		if is_instance_valid(old):
+			old.queue_free()
+	_props.clear()
+	for i in cover.size():
+		var style := room_style
+		if not tiles.is_empty():
+			style = cover_styles[i] if i < cover_styles.size() else 0
+		var prop := PropSprite.new()
+		layer.add_child(prop)
+		prop.place(COVER_ART.get(style, COVER_ART[0]), cover[i], style)
+		_props.append(prop)
 
 
 func _draw_brazier(point: Vector2) -> void:

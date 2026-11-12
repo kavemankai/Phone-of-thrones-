@@ -84,7 +84,7 @@ func is_dead() -> bool:
 
 
 func is_captain() -> bool:
-	return profile != null and profile.id == "captain"
+	return profile != null and (profile.id == "captain" or profile.id == "crown_tyrant")
 
 
 ## Cancels whatever the enemy was doing and freezes it for `duration` seconds. A hit on it
@@ -273,7 +273,7 @@ func _step_free(dt: float) -> void:
 	if ArenaSpace.blocked(position, hero.position, hero.arena_cover):
 		state = State.APPROACH
 		orbit_time = 0.0
-		_move(ArenaSpace.approach(position, hero.position, radius, hero.nav()), 1.0, dt)
+		_move(ArenaSpace.approach(position, _route_goal(), radius, hero.nav()), 1.0, dt)
 		return
 	if profile.orbit_before_attack > 0.0:
 		if dist > next.max_range + 14.0:
@@ -307,6 +307,21 @@ func _step_free(dt: float) -> void:
 	else:
 		state = State.POSITION
 		_move(dir.orthogonal() * strafe_sign, tuning.enemy_strafe_mult, dt)
+
+
+## Where to walk when the hero is out of sight. Normally the hero. On a map of rooms in a
+## column, an open gate that lies between us (along y) comes first, until we stand in it.
+func _route_goal() -> Vector2:
+	var best := hero.position
+	var nearest := INF
+	for gate in hero.nav_waypoints:
+		if (gate.y - position.y) * (gate.y - hero.position.y) >= 0.0:
+			continue
+		var away := position.distance_to(gate)
+		if away < nearest and away > radius * 0.75:
+			nearest = away
+			best = gate
+	return best
 
 
 func _move(dir: Vector2, mult: float, dt: float) -> void:
@@ -381,6 +396,9 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, radius + 3.0, Color(0, 0, 0, 0.3))
 	# Team/elite silhouette: no ambiguity when sprites and telegraphs overlap.
 	var ring_color := Color(1.0, 0.77, 0.22, 0.95) if is_captain() else Color(0.95, 0.25, 0.23, 0.72)
+	if profile.elite:
+		# Veteran: a second, pale ring outside the red one.
+		draw_arc(Vector2.ZERO, radius + 10.0, 0.0, TAU, 40, Color(1.0, 0.92, 0.7, 0.9), 2.5)
 	draw_arc(Vector2.ZERO, radius + (10.0 if is_captain() else 5.0),
 			0.0, TAU, 40, ring_color, 3.0 if is_captain() else 2.0)
 	if state == State.WINDUP or state == State.ACTIVE:
