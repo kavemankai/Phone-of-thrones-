@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/forgebreach-controller-arena-crawl
+      - 'art/**'
       - qa/forgebreach-m2-codex-verification
       - feature/forgebreach-controls-stamina-campaign
       - ccr-7b5c3e78-buce4p
