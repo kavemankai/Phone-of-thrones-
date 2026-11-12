@@ -71,6 +71,8 @@ var velocity := Vector2.ZERO
 var _visual_clock := 0.0
 var _locomotion_phase := 0.0
 var _locomotion_blend := 0.0
+var _visual_initialized := false
+var _visual_previous_position := Vector2.ZERO
 
 var _enemies: Array = []
 
@@ -178,6 +180,7 @@ func reset(pos: Vector2) -> void:
 	_visual_clock = 0.0
 	_locomotion_phase = 0.0
 	_locomotion_blend = 0.0
+	_visual_initialized = false
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
@@ -615,12 +618,17 @@ func _clamp_to_arena(p: Vector2) -> Vector2:
 func _process(delta: float) -> void:
 	_visual_clock += delta
 	if tuning != null and weapon != null:
-		# Animate only genuine travel, not a pressed stick against cover.
+		# Animate only genuine travel. A pressed stick against cover creates no footsteps.
+		if not _visual_initialized:
+			_visual_previous_position = position
+			_visual_initialized = true
+		var travel := minf(position.distance_to(_visual_previous_position), radius)
+		_visual_previous_position = position
 		var movement := 0.0
 		if state == State.IDLE:
-			movement = clampf(velocity.length() / maxf(move_speed(), 1.0), 0.0, 1.0)
+			movement = clampf(travel / maxf(move_speed() * delta, 0.001), 0.0, 1.0)
 		_locomotion_blend = move_toward(_locomotion_blend, movement, delta * 8.0)
-		_locomotion_phase = fposmod(_locomotion_phase + delta * 11.5 * _locomotion_blend, TAU)
+		_locomotion_phase = fposmod(_locomotion_phase + travel * 0.20, TAU)
 	cue_left = maxf(0.0, cue_left - delta)
 	flash = maxf(0.0, flash - delta)
 	parry_flash = maxf(0.0, parry_flash - delta)
