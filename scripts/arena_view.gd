@@ -41,6 +41,8 @@ var locked_gates: Array[Rect2] = []
 var open_gates: Array[Rect2] = []
 ## Prop art for each entry of `cover` on a combined map (a room style per footprint).
 var cover_styles: Array[int] = []
+## Cosmetic flicker clock; hazards and vent timings still use the combat simulation.
+var _ambience_time := 0.0
 
 
 func door_position(index: int) -> Vector2:
@@ -49,6 +51,13 @@ func door_position(index: int) -> Vector2:
 
 func _ready() -> void:
 	z_index = -1
+
+
+func _process(delta: float) -> void:
+	# Only invalidate the canvas when the two single-room braziers are visible.
+	if tiles.is_empty() and room_style in [0, 1, 3, 4]:
+		_ambience_time += delta
+		queue_redraw()
 
 
 func _draw() -> void:
@@ -164,8 +173,19 @@ func _draw_cover(footprint: Rect2, style: int) -> void:
 
 
 func _draw_brazier(point: Vector2) -> void:
-	draw_circle(point, 34.0, Color(0.95, 0.49, 0.17, 0.08))
-	draw_circle(point, 20.0, Color(1.0, 0.55, 0.21, 0.10))
+	var flicker := 0.5 + 0.5 * sin(_ambience_time * 7.0 + point.x * 0.047)
+	draw_circle(point, 34.0, Color(0.95, 0.49, 0.17, 0.04 + 0.07 * flicker))
+	draw_circle(point, 20.0, Color(1.0, 0.55, 0.21, 0.07 + 0.08 * flicker))
 	draw_set_transform_matrix(Transform2D(0.0, point) * Iso.upright())
 	draw_texture_rect(BRAZIER, Rect2(-11.0, -34.0, 22.0, 34.0), false)
+	# Small hand-drawn flames animate above the painted brazier without extra textures.
+	# Keep the glow restrained so enemy telegraphs retain their contrast.
+	var tip := -34.0 - 7.0 * flicker
+	var sway := sin(_ambience_time * 5.3 + point.y * 0.11) * 2.7
+	draw_colored_polygon(PackedVector2Array([
+			Vector2(-5.2, -25.0), Vector2(sway, tip),
+			Vector2(5.2, -25.0)]), Color(1.0, 0.42, 0.11, 0.78))
+	draw_colored_polygon(PackedVector2Array([
+			Vector2(-2.3, -25.0), Vector2(sway * 0.5, tip + 7.0),
+			Vector2(2.3, -25.0)]), Color(1.0, 0.87, 0.36, 0.87))
 	draw_set_transform(Vector2.ZERO)
