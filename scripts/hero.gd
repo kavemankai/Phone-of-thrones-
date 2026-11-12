@@ -616,7 +616,9 @@ func _process(delta: float) -> void:
 	_visual_clock += delta
 	if tuning != null and weapon != null:
 		# Animate only genuine travel, not a pressed stick against cover.
-		var movement := clampf(velocity.length() / maxf(move_speed(), 1.0), 0.0, 1.0) 				if state == State.IDLE else 0.0
+		var movement := 0.0
+		if state == State.IDLE:
+			movement = clampf(velocity.length() / maxf(move_speed(), 1.0), 0.0, 1.0)
 		_locomotion_blend = move_toward(_locomotion_blend, movement, delta * 8.0)
 		_locomotion_phase = fposmod(_locomotion_phase + delta * 11.5 * _locomotion_blend, TAU)
 	cue_left = maxf(0.0, cue_left - delta)
@@ -808,7 +810,9 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 			for trail in range(2, 0, -1):
 				var trail_angle := blade_angle - deg_to_rad(float(cur_attack.arc)) * 0.045 * trail
 				var trail_dir := Vector2.from_angle(trail_angle)
-				var trail_tint := Color(1.0, 0.74, 0.38, 0.15) if cur_attack.heavy 						else Color(0.58, 0.85, 1.0, 0.13)
+				var trail_tint := Color(0.58, 0.85, 1.0, 0.13)
+				if cur_attack.heavy:
+					trail_tint = Color(1.0, 0.74, 0.38, 0.15)
 				ForgeArt.weapon(self, weapon.id, anchor + Iso.to_screen(trail_dir) * radius * 0.6,
 						anchor + Iso.to_screen(trail_dir) * length, trail_tint)
 		var dir := Vector2.from_angle(blade_angle)
