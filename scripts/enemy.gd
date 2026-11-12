@@ -273,7 +273,7 @@ func _step_free(dt: float) -> void:
 	if ArenaSpace.blocked(position, hero.position, hero.arena_cover):
 		state = State.APPROACH
 		orbit_time = 0.0
-		_move(ArenaSpace.approach(position, hero.position, radius, hero.nav()), 1.0, dt)
+		_move(ArenaSpace.approach(position, _route_goal(), radius, hero.nav()), 1.0, dt)
 		return
 	if profile.orbit_before_attack > 0.0:
 		if dist > next.max_range + 14.0:
@@ -307,6 +307,21 @@ func _step_free(dt: float) -> void:
 	else:
 		state = State.POSITION
 		_move(dir.orthogonal() * strafe_sign, tuning.enemy_strafe_mult, dt)
+
+
+## Where to walk when the hero is out of sight. Normally the hero. On a map of rooms in a
+## column, an open gate that lies between us (along y) comes first, until we stand in it.
+func _route_goal() -> Vector2:
+	var best := hero.position
+	var nearest := INF
+	for gate in hero.nav_waypoints:
+		if (gate.y - position.y) * (gate.y - hero.position.y) >= 0.0:
+			continue
+		var away := position.distance_to(gate)
+		if away < nearest and away > radius * 0.75:
+			nearest = away
+			best = gate
+	return best
 
 
 func _move(dir: Vector2, mult: float, dt: float) -> void:

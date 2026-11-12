@@ -78,6 +78,8 @@ func _draw_campaign_desktop() -> void:
 		_draw_banner(font, "REINFORCEMENTS", mid_y, Color(1.0, 0.8, 0.3))
 	if game.state == Game.State.ROOM_CLEAR:
 		_draw_banner(font, "ROOM CLEAR", mid_y, Color.WHITE)
+	if game.tutorial_showing():
+		_draw_note(font, game.tutorial_text(), Color(0.55, 0.85, 1.0))
 	if game.state != Game.State.DOOR_CHOICE:
 		return
 
@@ -132,6 +134,16 @@ func _draw_campaign_desktop() -> void:
 			line += 19.0
 			draw_string(font, Vector2(left, line), Boon.text(pickup),
 					HORIZONTAL_ALIGNMENT_CENTER, card.x, 13, Color(0.82, 0.86, 0.92))
+
+
+## A boxed line centred just above the status strip.
+func _draw_note(font: Font, text: String, edge: Color) -> void:
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 20).x + 36.0
+	var box := Rect2((size.x - w) * 0.5, size.y - bar_height - 44.0, w, 34.0)
+	draw_rect(box, Color(0.05, 0.05, 0.06))
+	draw_rect(box, Color(edge, 0.8), false, 2.0)
+	draw_string(font, Vector2(box.position.x, box.position.y + 24.0), text,
+			HORIZONTAL_ALIGNMENT_CENTER, w, 20, Color.WHITE)
 
 
 func _draw_banner(font: Font, text: String, y: float, tint: Color) -> void:

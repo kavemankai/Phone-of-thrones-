@@ -31,6 +31,9 @@ var arena_cover: Array[Rect2] = []
 ## to the props of the room being fought in, so long walls are not searched every step.
 var nav_cover: Array[Rect2] = []
 var nav_override := false
+## Openings in walls (open gates on a large map). An enemy cut off from the hero heads for
+## the one that lies between them.
+var nav_waypoints: Array[Vector2] = []
 
 var state: State = State.IDLE
 var state_time := 0.0
