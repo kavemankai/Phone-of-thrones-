@@ -67,6 +67,11 @@ var cue_color := Color.WHITE
 ## takes over movement (wind-up, strike, dodge, hurt, guard break, death).
 var velocity := Vector2.ZERO
 
+## Animation state is presentation-only; it cannot alter collisions or action timers.
+var _visual_clock := 0.0
+var _locomotion_phase := 0.0
+var _locomotion_blend := 0.0
+
 var _enemies: Array = []
 
 
@@ -170,6 +175,9 @@ func reset(pos: Vector2) -> void:
 	cue_text = ""
 	cue_left = 0.0
 	velocity = Vector2.ZERO
+	_visual_clock = 0.0
+	_locomotion_phase = 0.0
+	_locomotion_blend = 0.0
 	_enemies = []
 	modulate.a = 1.0
 	queue_redraw()
@@ -605,6 +613,12 @@ func _clamp_to_arena(p: Vector2) -> Vector2:
 
 
 func _process(delta: float) -> void:
+	_visual_clock += delta
+	if tuning != null and weapon != null:
+		# Animate only genuine travel, not a pressed stick against cover.
+		var movement := clampf(velocity.length() / maxf(move_speed(), 1.0), 0.0, 1.0) 				if state == State.IDLE else 0.0
+		_locomotion_blend = move_toward(_locomotion_blend, movement, delta * 8.0)
+		_locomotion_phase = fposmod(_locomotion_phase + delta * 11.5 * _locomotion_blend, TAU)
 	cue_left = maxf(0.0, cue_left - delta)
 	flash = maxf(0.0, flash - delta)
 	parry_flash = maxf(0.0, parry_flash - delta)
@@ -673,8 +687,16 @@ func _draw() -> void:
 	if state == State.DODGE:
 		var progress := clampf(state_time / tuning.dodge_duration, 0.0, 1.0)
 		var direction := Iso.to_screen(dodge_dir).normalized()
+		var airborne := sin(progress * PI) * 8.0
+		# Semi-transparent afterimages emphasise the roll without moving the hitbox.
+		for trail in range(2, 0, -1):
+			var ghost := tint
+			ghost.a *= (1.0 - progress) * (0.13 if trail == 2 else 0.23)
+			var displacement := direction * float(8 + trail * 9) * (1.0 - progress)
+			ForgeArt.actor(self, ForgeArt.HERO_ROLL, height * 0.63, direction, ghost,
+					Vector2(-displacement.x, -airborne - displacement.y), direction.x * 0.65)
 		ForgeArt.actor(self, ForgeArt.HERO_ROLL, height * 0.63, direction, tint,
-				Vector2(0.0, -sin(progress * PI) * 8.0), direction.x * 0.65)
+				Vector2(0.0, -airborne), direction.x * 0.65)
 		return
 	if state == State.DEAD:
 		ForgeArt.actor(self, ForgeArt.ACTORS.hero, height, heading_screen,
@@ -686,18 +708,40 @@ func _draw() -> void:
 		_draw_shield(shield_pos, false)
 	var pose: Texture2D = ForgeArt.ACTORS.hero
 	var stride := 0.0
+	var stretch := 1.0
+	var lean := 0.0
 	match state:
 		State.WINDUP:
 			pose = ForgeArt.HERO_WINDUP
-		State.ACTIVE, State.RECOVER:
+			var wind := clampf(state_time / maxf(float(cur_attack.windup), 0.01), 0.0, 1.0)
+			lean = -0.14 * heading_screen.x * wind
+			stretch = 1.0 - 0.06 * wind
+		State.ACTIVE:
 			pose = ForgeArt.HERO_STRIKE
+			var sweep := clampf(state_time / maxf(float(cur_attack.active), 0.01), 0.0, 1.0)
+			lean = 0.17 * heading_screen.x * sin(sweep * PI)
+			stretch = 1.0 + 0.06 * sin(sweep * PI)
+		State.RECOVER:
+			pose = ForgeArt.HERO_STRIKE
+			var recovery := clampf(state_time / maxf(float(cur_attack.recover), 0.01), 0.0, 1.0)
+			lean = 0.12 * heading_screen.x * (1.0 - recovery)
 		State.IDLE:
-			if input.move_vector().length_squared() > 0.05:
+			if _locomotion_blend > 0.001:
 				pose = ForgeArt.HERO_RUN
-				stride = absf(sin(Time.get_ticks_msec() * 0.016)) * 3.0
+				stride = sin(_locomotion_phase) * 3.3 * _locomotion_blend
+				stretch = 1.0 + 0.025 * cos(_locomotion_phase * 2.0) * _locomotion_blend
+		State.HURT:
+			stretch = 0.92
+	# Smoothly blend the supplied idle/run cutouts instead of snapping between sprites.
+	if state == State.IDLE and _locomotion_blend > 0.001:
+		var idle_tint := tint
+		idle_tint.a *= 1.0 - _locomotion_blend
+		ForgeArt.actor(self, ForgeArt.ACTORS.hero, height, heading_screen, idle_tint)
+		tint.a *= _locomotion_blend
 	# Struck: rock back for as long as the hit flash lasts.
 	var flinch := -0.18 * heading_screen.x * clampf(flash / 0.15, 0.0, 1.0) if state == State.HURT else 0.0
-	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride), flinch)
+	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride),
+			lean + flinch, stretch)
 	if has_shield and shield_in_front:
 		_draw_shield(shield_pos, state == State.BLOCK)
 	if state == State.GUARD_BREAK:
@@ -759,6 +803,14 @@ func _draw_weapon(anchor_height: float, attacking: bool) -> void:
 	var angles: Array = [ang - 0.35, ang + 0.35] if weapon.dual else [ang]
 	var anchor := Vector2(0.0, -anchor_height)
 	for blade_angle in angles:
+		if attacking and state == State.ACTIVE:
+			# Painted blade ghosts follow the actual animation sweep; damage remains unchanged.
+			for trail in range(2, 0, -1):
+				var trail_angle := blade_angle - deg_to_rad(float(cur_attack.arc)) * 0.045 * trail
+				var trail_dir := Vector2.from_angle(trail_angle)
+				var trail_tint := Color(1.0, 0.74, 0.38, 0.15) if cur_attack.heavy 						else Color(0.58, 0.85, 1.0, 0.13)
+				ForgeArt.weapon(self, weapon.id, anchor + Iso.to_screen(trail_dir) * radius * 0.6,
+						anchor + Iso.to_screen(trail_dir) * length, trail_tint)
 		var dir := Vector2.from_angle(blade_angle)
 		ForgeArt.weapon(self, weapon.id, anchor + Iso.to_screen(dir) * radius * 0.6,
 				anchor + Iso.to_screen(dir) * length)
