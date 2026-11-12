@@ -11,6 +11,7 @@ signal controls_requested
 signal campaign_requested(weapon_index: int, shield: bool)
 signal continue_requested
 signal map_requested(weapon_index: int, shield: bool)
+signal credits_requested
 
 const TITLE_ART := preload("res://assets/ui/title.webp")
 const ENDING_ART := preload("res://assets/ui/ending.webp")
@@ -45,6 +46,9 @@ var _hint: Label
 ## The button that takes the focus when the panel appears.
 var _default_focus: Control
 var _campaign_label := "New campaign"
+## Oathbound: a harder run, offered once the fortress has been taken.
+var hard_run := false
+var _hard_button: Button
 var _style: InputPrompts.Style = InputPrompts.Style.KEYBOARD
 
 
@@ -179,6 +183,12 @@ func _ready() -> void:
 	_continue_button.pressed.connect(func(): continue_requested.emit())
 	play_row.add_child(_continue_button)
 	_continue_button.hide()
+	_hard_button = _toggle("", null, Vector2(210, 76))
+	_hard_button.add_theme_font_size_override("font_size", 20)
+	_hard_button.pressed.connect(func(): set_hard_run(_hard_button.button_pressed))
+	play_row.add_child(_hard_button)
+	_hard_button.hide()
+	set_hard_run(false)
 
 	_quit_button = Button.new()
 	_quit_button.custom_minimum_size = Vector2(340, 42)
@@ -204,6 +214,13 @@ func _ready() -> void:
 	UiFocus.style(all_rooms)
 	all_rooms.pressed.connect(func(): map_requested.emit(weapon_index, shield_usable()))
 	footer.add_child(all_rooms)
+	var credits := Button.new()
+	credits.text = "Credits"
+	credits.custom_minimum_size = Vector2(150, 42)
+	credits.add_theme_font_size_override("font_size", 20)
+	UiFocus.style(credits)
+	credits.pressed.connect(func(): credits_requested.emit())
+	footer.add_child(credits)
 	footer.add_child(_quit_button)
 	_disarm_quit()
 
@@ -293,6 +310,11 @@ func show_start() -> void:
 	_title.text = "FORGEBREACH"
 	_title.modulate = Color(1.0, 0.86, 0.64)
 	_info.text = "Pick a weapon, then start a campaign or enter the Test Room."
+	var records := RunRecords.summary()
+	if records != "":
+		_info.text += "\n" + records
+	if _hard_button != null:
+		_hard_button.visible = RunRecords.has_won()
 	_fight_button.text = "Test Room"
 	_default_focus = _fight_button
 	_campaign_label = "New campaign"
@@ -327,6 +349,13 @@ func show_campaign_result(cleared: bool, heading: String, details: String) -> vo
 		_default_focus = _campaign_button
 		if _campaign_button.is_visible_in_tree():
 			_campaign_button.grab_focus()
+
+
+func set_hard_run(on: bool) -> void:
+	hard_run = on
+	if _hard_button != null:
+		_hard_button.set_pressed_no_signal(on)
+		_hard_button.text = "Oathbound: ON" if on else "Oathbound: OFF"
 
 
 func set_continue_available(available: bool) -> void:

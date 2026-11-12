@@ -70,6 +70,8 @@ var wave_notice := 0.0
 ## Groups called in mid-fight (the Tyrant's second phase). They enter on the next step, so
 ## nothing is added to the enemy list while a strike is still being resolved.
 var _summons: Array = []
+## The run that just ended set a new best time.
+var _new_best := false
 ## Floor vents of the current room, and for each "vent:body" the last cycle that burned it.
 var _vents: Array[Rect2] = []
 var _vent_burned: Dictionary = {}
@@ -113,6 +115,7 @@ var hud: CombatHud
 var menu: MenuPanel
 var pause_panel: PausePanel
 var bindings_panel: BindingsPanel
+var ending_panel: EndingPanel
 var _bindings_return_panel: Control
 var _bindings_return_focus: Control
 var sfx: Sfx
@@ -219,7 +222,8 @@ func _ready() -> void:
 		directional_guard = menu.directional_guard
 		start_fight(m as Mode, w))
 	menu.campaign_requested.connect(func(w: int, sh: bool):
-		_new_campaign(w, sh, CampaignRun.PLAN_FORTRESS))
+		_new_campaign(w, sh, CampaignRun.PLAN_FORTRESS, menu.hard_run))
+	menu.credits_requested.connect(_open_credits)
 	menu.continue_requested.connect(_continue_campaign)
 	menu.quit_requested.connect(func(): get_tree().quit())
 	pause_panel = PausePanel.new()
@@ -228,6 +232,9 @@ func _ready() -> void:
 	pause_panel.restart_requested.connect(_restart_room)
 	pause_panel.loadout_requested.connect(return_to_menu)
 	pause_panel.quit_requested.connect(func(): get_tree().quit())
+	ending_panel = EndingPanel.new()
+	ui.add_child(ending_panel)
+	ending_panel.closed.connect(_on_ending_closed)
 	bindings_panel = BindingsPanel.new()
 	ui.add_child(bindings_panel)
 	menu.controls_requested.connect(_open_bindings.bind(menu))
@@ -306,6 +313,8 @@ func _prepare_room(room_size: Vector2) -> void:
 	paused = false
 	_waves_left = []
 	_summons = []
+	_new_best = false
+	ending_panel.visible = false
 	wave_notice = 0.0
 	_vents.clear()
 	_vent_burned.clear()
@@ -467,9 +476,11 @@ func _count_parry(parried: bool) -> void:
 
 ## Starts a run. The menu starts the first ward; the default is the original three-room
 ## slice, kept so its checks still describe what they were written for.
-func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE) -> void:
+func _new_campaign(w: int, shield: bool, plan := CampaignRun.PLAN_SLICE, oathbound := false) -> void:
 	campaign = CampaignRun.new()
 	campaign.plan = plan
+	if oathbound:
+		campaign.swear_oathbound()
 	campaign.weapon_index = w
 	campaign.shield = shield
 	campaign.split = menu.split_attacks
@@ -862,6 +873,8 @@ func _check_outcome() -> void:
 			if CampaignRun.read() != null:
 				var error := DirAccess.remove_absolute(CampaignRun.CHECKPOINT)
 				checkpoint_message = "" if error == OK else "Could not close the checkpoint."
+			if campaign.plan == CampaignRun.PLAN_FORTRESS:
+				_new_best = RunRecords.note_win(weapon().display_name, campaign.time, campaign.hard)
 			_finish(Outcome.VICTORY)
 		else:
 			_clear_delay = 0.55
@@ -947,9 +960,42 @@ func _process(delta: float) -> void:
 				if result_timer <= 0.0:
 					if campaign == null:
 						menu.show_result(outcome == Outcome.VICTORY, fight_time, hero.hp, mode, loadout_name())
+					elif outcome == Outcome.VICTORY and campaign.plan == CampaignRun.PLAN_FORTRESS:
+						_show_fortress_ending()
 					else:
 						_show_campaign_result()
 					menu.set_continue_available(CampaignRun.read() != null)
+
+
+## The line of numbers for a finished run.
+func _run_totals() -> String:
+	var line := "Time %s      Hits taken %d      Parries %d" % [
+		RunRecords.clock(campaign.time), campaign.hits_taken, campaign.parries]
+	if campaign.hard:
+		line += "      Oathbound"
+	if _new_best:
+		line += "      New best time"
+	return line
+
+
+## After the final boss: the ending and credits first, then the usual result screen.
+func _show_fortress_ending() -> void:
+	ending_panel.layout(get_viewport().get_visible_rect().size)
+	ending_panel.show_ending(_run_totals())
+
+
+func _open_credits() -> void:
+	menu.hide()
+	ending_panel.layout(get_viewport().get_visible_rect().size)
+	ending_panel.show_credits()
+
+
+func _on_ending_closed() -> void:
+	if state == State.RESULT and campaign != null:
+		_show_campaign_result()
+		menu.set_continue_available(CampaignRun.read() != null)
+	else:
+		menu.show()
 
 
 func _show_campaign_result() -> void:

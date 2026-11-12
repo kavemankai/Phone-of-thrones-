@@ -13,6 +13,8 @@ const FOE_NAMES := {
 	"warden!": "Warden Champion", "penitent!": "Flagellant", "herald!": "High Herald",
 }
 const ELITE_HEALTH_MULT := 1.6
+## The vows an Oathbound run begins with.
+const OATHBOUND_VOWS: Array[String] = [Vow.IRON, Vow.FRAILTY]
 ## Which room table a run walks. The slice is the original three-room test (ROOMS below);
 ## a ward is a full table from WardData.
 const PLAN_SLICE := "slice"
@@ -52,6 +54,8 @@ var boons := PackedStringArray()
 var run_seed := 0
 ## Vows sworn so far (Vow ids), in the order taken.
 var vows := PackedStringArray()
+## An Oathbound run: it starts with OATHBOUND_VOWS already sworn.
+var hard := false
 var plan := PLAN_SLICE
 ## Run totals for the ending screen. They count every attempt, including rooms retried.
 var time := 0.0
@@ -166,6 +170,14 @@ func offer(choice: int) -> String:
 	return pool[first if choice == 0 else second]
 
 
+## Makes this a harder run from its first room. Call before the first save.
+func swear_oathbound() -> void:
+	hard = true
+	for id in OATHBOUND_VOWS:
+		if not vows.has(id):
+			vows.append(id)
+
+
 func has_vow(id: String) -> bool:
 	return vows.has(id)
 
@@ -237,6 +249,7 @@ func save() -> Error:
 	file.set_value("run", "seed", run_seed)
 	file.set_value("run", "plan", plan)
 	file.set_value("run", "vows", vows)
+	file.set_value("run", "hard", hard)
 	file.set_value("run", "stats", [time, hits_taken, parries])
 	var temp := CHECKPOINT + ".tmp"
 	var error := file.save(temp)
@@ -280,8 +293,12 @@ static func read() -> CampaignRun:
 	# A door gives one pickup, or two with a vow.
 	if not saved_boons is PackedStringArray or saved_boons.size() > entry[0] * 2:
 		return null
+	var saved_hard: Variant = file.get_value("run", "hard", false)
+	if not saved_hard is bool:
+		return null
+	var vow_limit: int = entry[0] + (OATHBOUND_VOWS.size() if saved_hard else 0)
 	var saved_vows: Variant = file.get_value("run", "vows", PackedStringArray())
-	if not saved_vows is PackedStringArray or saved_vows.size() > entry[0]:
+	if not saved_vows is PackedStringArray or saved_vows.size() > vow_limit:
 		return null
 	for i in saved_vows.size():
 		if not Vow.exists(saved_vows[i]) or saved_vows.slice(0, i).has(saved_vows[i]):
@@ -295,6 +312,7 @@ static func read() -> CampaignRun:
 	var result := CampaignRun.new()
 	result.boons = saved_boons
 	result.vows = saved_vows
+	result.hard = saved_hard
 	result.run_seed = saved_seed
 	result.plan = saved_plan
 	var stats: Variant = file.get_value("run", "stats", null)
