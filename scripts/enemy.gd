@@ -456,7 +456,8 @@ func _draw() -> void:
 	if flash > 0.0:
 		# Struck: rock back, away from where it is facing.
 		lean -= 0.20 * screen_facing.x * clampf(flash / 0.12, 0.0, 1.0)
-	var stride := sin(_walk_phase) * _walk_blend * (2.0 if profile.id == "hound" else 3.0)
+	# A bounce up from the ground, never a dip below the feet line.
+	var stride := absf(sin(_walk_phase)) * _walk_blend * (2.0 if profile.id == "hound" else 3.0)
 	var stretch := 1.0 + 0.035 * cos(_walk_phase * 2.0) * _walk_blend
 	# Anticipation, strike and recoil are tied to the exact combat state/timer.
 	if state == State.WINDUP:
