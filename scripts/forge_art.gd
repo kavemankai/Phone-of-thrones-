@@ -29,18 +29,19 @@ const SHIELD := preload("res://assets/equipment/shield.webp")
 
 
 static func actor(target: CanvasItem, texture: Texture2D, height: float, direction: Vector2,
-		tint: Color, offset := Vector2.ZERO, tilt := 0.0) -> void:
+		tint: Color, offset := Vector2.ZERO, tilt := 0.0, stretch := 1.0) -> void:
 	var width := height * float(texture.get_width()) / texture.get_height()
 	var flip := -1.0 if direction.x < 0.0 else 1.0
-	target.draw_set_transform_matrix(Iso.upright() * Transform2D(tilt, Vector2(flip, 1), 0.0, offset))
+	target.draw_set_transform_matrix(Iso.upright() * Transform2D(tilt, Vector2(flip, stretch), 0.0, offset))
 	target.draw_texture_rect(texture, Rect2(-width * 0.5, -height, width, height), false, tint)
 	target.draw_set_transform_matrix(Iso.upright())
 
 
-static func weapon(target: CanvasItem, id: String, start: Vector2, end: Vector2) -> void:
+static func weapon(target: CanvasItem, id: String, start: Vector2, end: Vector2,
+		tint := Color.WHITE) -> void:
 	var texture: Texture2D = EQUIPMENT.get(id, EQUIPMENT.sword)
 	var direction := end - start
 	var height := direction.length() * float(texture.get_height()) / texture.get_width()
 	target.draw_set_transform_matrix(Iso.upright() * Transform2D(direction.angle(), start))
-	target.draw_texture_rect(texture, Rect2(0.0, -height * 0.5, direction.length(), height), false)
+	target.draw_texture_rect(texture, Rect2(0.0, -height * 0.5, direction.length(), height), false, tint)
 	target.draw_set_transform_matrix(Iso.upright())

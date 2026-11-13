@@ -1,5 +1,13 @@
 # FORGEBREACH progress ledger
 
+### 2026-11-12 — Visual assets and animation polish (QA pending)
+- Working branch: `art/forgebreach-animation-polish-20261112`, based on the newer campaign branch, not the older default/prototype.
+- 34 art and 16 audio source files enumerated; their binary artwork/audio was not edited. Added imported-resource QA plus a complete scope/limitations record at `docs/forgebreach/VISUAL_AUDIT_2026-11-12.md`.
+- Presentation code: hero idle/run blending driven by measured travel, attack anticipation/follow-through, dodge afterimages, translucent weapon trails; enemy displacement-driven bobbing and action stretch; corrected rotating sparks, dodge dust and flickering single-room braziers.
+- **QA PENDING:** No in-chat Godot runtime or physical PC/controller testing. Existing combat state/timers and attack hitboxes intentionally unchanged. Merge only after CI and screenshot/playtest review.
+
+
+
 Updated 2026-11-10. This file is the durable checkpoint for handovers; distinguish implementation, automated evidence and physical verification.
 
 | Milestone | Status | Evidence / blocker |
@@ -17,6 +25,13 @@ Updated 2026-11-10. This file is the durable checkpoint for handovers; distingui
 The existing project still runs as Shieldwall Combat Test; no new gameplay is claimed by these administrative commits. The displayed title FORGEBREACH is provisional.
 
 ### Activity log
+- Review of the animation polish pass (PR #30) by the gameplay agent, from the code and CI only; nothing was run or seen. No image or audio files changed in that pass: it is drawn motion on the existing 50 assets plus `tests/visual_assets_qa.gd`. CI is green on `513b119`. Two drawing faults fixed (QA pending): the idle/run blend drew both hero poses at partial alpha, so the hero went up to 25% see-through every time movement started or stopped, and now one pose is always solid; the walk bounce used a signed sine, so hero and enemies sank up to 3 px below their feet line for half of each step, and it is now always upward. Not changed: the run pose is only used in IDLE, so walking while guarding or recovering shows no steps.
+- Ending, credits, records and the Oathbound run (QA pending; not parsed, run or built by the gameplay agent).
+  - Beating the Crown Tyrant now opens an ending screen (`scripts/ending_panel.gd`): three closing lines, the run's time, hits taken and parries, then the credits. Continue (or Back) leads to the usual result screen with New run focused. The same panel shows the credits from a new Credits button in the title footer. Credits name Godot and its MIT licence, state that the paintings were generated with an image model and that the audio is original procedural design.
+  - Records (`scripts/run_records.gd`, `user://records.cfg`): fortress wins, Oathbound wins, best time and the weapon it was set with. The title shows one line once there is a win; the ending marks a new best time.
+  - Oathbound: after the first fortress win the title shows an "Oathbound: OFF/ON" toggle. An Oathbound run starts with the Vows of Iron and Frailty already sworn (`CampaignRun.swear_oathbound`), stored as an optional `hard` checkpoint key.
+  - Known limits: the title column gains a line and a button, on a layout whose fit in 720 px nobody has seen; credits text is a first draft and names no people.
+  - QA checks worth adding: a fortress victory shows the ending panel before the menu and closing it shows the result; `RunRecords.note_win` round-trips and only lowers the best time; the Oathbound toggle is hidden with no wins; an Oathbound checkpoint with two vows at stage 0 reads, and the same file without `hard` is rejected; the Credits button opens and closes back to the title with focus restored.
 - The Inner Keep and the ten-room run (QA pending; not parsed, run or built by the gameplay agent; no play session yet, and PR #29's CI run was still queued when this was written, so it sits on unchecked commits).
   - New campaign now starts `CampaignRun.PLAN_FORTRESS`: the five Outer Walls rooms, then five Inner Keep rooms (`WardData.INNER_KEEP`), ten in all. The Gate Captain at room 5 is no longer the end; doors open in the Crown Pit after it falls.
   - Rooms 6 to 9 revisit the Gatehouse, Kennels, Hall and Forge under night or white-heat tints, three variants each, with veterans placed by hand and five second waves.

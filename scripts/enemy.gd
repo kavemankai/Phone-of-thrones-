@@ -56,6 +56,12 @@ var speed_buff := 1.0
 ## 1, or 2 once a two-phase enemy has passed its threshold.
 var phase := 1
 var guard_flash := 0.0
+## Presentation state. Tracks real ground displacement rather than movement intent.
+var _visual_time := 0.0
+var _visual_initialized := false
+var _visual_previous_position := Vector2.ZERO
+var _walk_phase := 0.0
+var _walk_blend := 0.0
 
 
 func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: int,
@@ -76,6 +82,10 @@ func setup(t: Tuning, ctrl: EncounterController, h: Hero, arena: Vector2, idx: i
 	phase = 1
 	state = State.APPROACH
 	fade = 0.0
+	_visual_time = 0.0
+	_visual_initialized = false
+	_walk_phase = 0.0
+	_walk_blend = 0.0
 	visible = true
 
 
@@ -370,6 +380,19 @@ func _try_hit() -> void:
 
 
 func _process(delta: float) -> void:
+	_visual_time += delta
+	if not _visual_initialized:
+		_visual_previous_position = position
+		_visual_initialized = true
+	# Uses measured travel, so a blocked enemy never walks in place. The clamp ignores
+	# large hit knockbacks and respawn jumps for purposes of the walk cycle.
+	var travel := minf(position.distance_to(_visual_previous_position), radius)
+	_visual_previous_position = position
+	var moving := 0.0
+	if state in [State.APPROACH, State.POSITION]:
+		moving = clampf(travel / maxf(130.0 * delta, 0.001), 0.0, 1.0)
+	_walk_blend = move_toward(_walk_blend, moving, delta * 9.0)
+	_walk_phase = fposmod(_walk_phase + travel * 0.22, TAU)
 	flash = maxf(0.0, flash - delta)
 	guard_flash = maxf(0.0, guard_flash - delta)
 	z_index = int(position.x + position.y)  # isometric depth order
@@ -433,8 +456,23 @@ func _draw() -> void:
 	if flash > 0.0:
 		# Struck: rock back, away from where it is facing.
 		lean -= 0.20 * screen_facing.x * clampf(flash / 0.12, 0.0, 1.0)
-	var stride := absf(sin(Time.get_ticks_msec() * 0.014 + position.x)) * 2.5 if state == State.APPROACH else 0.0
-	ForgeArt.actor(self, texture, height, screen_facing, tint, Vector2(0.0, -stride), lean)
+	# A bounce up from the ground, never a dip below the feet line.
+	var stride := absf(sin(_walk_phase)) * _walk_blend * (2.0 if profile.id == "hound" else 3.0)
+	var stretch := 1.0 + 0.035 * cos(_walk_phase * 2.0) * _walk_blend
+	# Anticipation, strike and recoil are tied to the exact combat state/timer.
+	if state == State.WINDUP:
+		var anticipation := clampf(state_time / maxf(cur.windup, 0.01), 0.0, 1.0)
+		stretch = 1.0 - 0.07 * anticipation
+	elif state == State.ACTIVE:
+		var follow_through := clampf(state_time / maxf(cur.active, 0.01), 0.0, 1.0)
+		stretch = 1.0 + 0.07 * sin(follow_through * PI)
+	elif state == State.STAGGER:
+		stretch = 0.90 + 0.025 * sin(_visual_time * 11.0)
+	elif state == State.RECOVER:
+		var release := clampf(state_time / maxf(cur.recover, 0.01), 0.0, 1.0)
+		stretch = 1.0 - 0.035 * (1.0 - release)
+	ForgeArt.actor(self, texture, height, screen_facing, tint,
+			Vector2(0.0, -stride), lean, stretch)
 	if state == State.STAGGER:
 		# Dazed: stars circling the head.
 		var t := Time.get_ticks_msec() * 0.008
