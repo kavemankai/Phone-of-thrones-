@@ -744,16 +744,22 @@ func _draw() -> void:
 		State.IDLE:
 			if _locomotion_blend > 0.001:
 				pose = ForgeArt.HERO_RUN
-				stride = sin(_locomotion_phase) * 3.3 * _locomotion_blend
+				# A bounce up from the ground, never a dip below the feet line.
+				stride = absf(sin(_locomotion_phase)) * 3.3 * _locomotion_blend
 				stretch = 1.0 + 0.025 * cos(_locomotion_phase * 2.0) * _locomotion_blend
 		State.HURT:
 			stretch = 0.92
-	# Smoothly blend the supplied idle/run cutouts instead of snapping between sprites.
-	if state == State.IDLE and _locomotion_blend > 0.001:
+	# Blend the idle and run cutouts instead of snapping between them. One of the two is
+	# always drawn solid, so the hero never turns see-through part-way through the blend:
+	# the idle pose stays solid while the run pose fades in over it, then the run pose is
+	# solid while the idle pose fades out behind it.
+	if state == State.IDLE and _locomotion_blend > 0.001 and _locomotion_blend < 0.999:
 		var idle_tint := tint
-		idle_tint.a *= 1.0 - _locomotion_blend
+		if _locomotion_blend < 0.5:
+			tint.a *= _locomotion_blend * 2.0
+		else:
+			idle_tint.a *= (1.0 - _locomotion_blend) * 2.0
 		ForgeArt.actor(self, ForgeArt.ACTORS.hero, height, heading_screen, idle_tint)
-		tint.a *= _locomotion_blend
 	# Struck: rock back for as long as the hit flash lasts.
 	var flinch := -0.18 * heading_screen.x * clampf(flash / 0.15, 0.0, 1.0) if state == State.HURT else 0.0
 	ForgeArt.actor(self, pose, height, heading_screen, tint, Vector2(0.0, -stride),
